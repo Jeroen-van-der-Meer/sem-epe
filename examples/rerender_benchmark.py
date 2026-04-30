@@ -1,10 +1,7 @@
 """How long does it take to re-render an image?"""
 
 import time
-
-import matplotlib.pyplot as plt
 import math
-import numpy as np
 
 from sem_epe import Layer, Layout, Line, Pillar, Orientation
 
@@ -78,9 +75,9 @@ print(f"Average re-render V1: {((t4 - t3) / nfeat_v1 * 1000):.3f} ms")
 print(f"Average re-render M2: {((t5 - t4) / nfeat_m2 * 1000):.3f} ms")
 
 """
-Setup time:           2.544 ms
-Initial render time:  84.308 ms
-Average re-render M1: 0.701 ms
-Average re-render V1: 0.547 ms
-Average re-render M2: 0.094 ms
+Setup time:           2.282 ms
+Initial render time:  91.249 ms
+Average re-render M1: 0.645 ms
+Average re-render V1: 0.089 ms
+Average re-render M2: 0.095 ms
 """

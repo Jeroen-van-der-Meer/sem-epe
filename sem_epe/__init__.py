@@ -291,7 +291,10 @@ class Layout:
     * ``_feature_masks``  — compact boolean array per :class:`Feature`, sized
       to the feature's bounding box.
     * ``_layer_masks``    — union boolean (H, W) array per :class:`Layer`.
-    * ``_feature_bboxes`` — last-rendered bounding box per :class:`Feature`.
+    * ``_layer_bboxes``   — (N, 4) int32 array of bboxes for every feature in
+      each layer, kept in sync with ``_feature_masks``.
+    * ``_feature_index``  — maps each :class:`Feature` to its row index in its
+      layer's ``_layer_bboxes`` array.
 
     :meth:`rerender_feature` uses these caches to restrict all work to the
     dirty subregion (union of old and new bounding boxes).  Feature masks are
@@ -316,7 +319,8 @@ class Layout:
 
         self._feature_masks: Dict[Feature, np.ndarray] = {}
         self._layer_masks: Dict[Layer, np.ndarray] = {}
-        self._feature_bboxes: Dict[Feature, Tuple[int, int, int, int]] = {}
+        self._layer_bboxes: Dict[Layer, np.ndarray] = {}
+        self._feature_index: Dict[Feature, int] = {}
         self._image: Optional[np.ndarray] = None
 
     def add_layer(self, layer: Layer) -> "Layout":
@@ -345,13 +349,16 @@ class Layout:
 
         for layer in self.layers:
             lm = np.zeros(self.shape, dtype=bool)
-            for f in layer.features:
+            bboxes = np.empty((len(layer.features), 4), dtype=np.int32)
+            for i, f in enumerate(layer.features):
                 bbox = f.bounding_box(self.shape)
                 r0, c0, r1, c1 = bbox
                 fm = f.render_mask(bbox)        # compact: shape (r1-r0, c1-c0)
                 self._feature_masks[f] = fm
-                self._feature_bboxes[f] = bbox
+                self._feature_index[f] = i
+                bboxes[i] = bbox
                 lm[r0:r1, c0:c1] |= fm
+            self._layer_bboxes[layer] = bboxes
             self._layer_masks[layer] = lm
             image[lm] = layer.gray_value
 
@@ -394,34 +401,37 @@ class Layout:
             in place; call :meth:`rerender_feature` again to update it.
         """
         layer = feature.layer
+        feat_idx = self._feature_index[feature]
+        layer_bboxes = self._layer_bboxes[layer]
 
         # Dirty region = union of old and new bounding boxes.
-        old_r0, old_c0, old_r1, old_c1 = self._feature_bboxes[feature]
+        old_r0, old_c0, old_r1, old_c1 = layer_bboxes[feat_idx]
         new_r0, new_c0, new_r1, new_c1 = feature.bounding_box(self.shape)
-        dr0 = min(old_r0, new_r0)
-        dc0 = min(old_c0, new_c0)
-        dr1 = max(old_r1, new_r1)
-        dc1 = max(old_c1, new_c1)
+        dr0 = int(min(old_r0, new_r0))
+        dc0 = int(min(old_c0, new_c0))
+        dr1 = int(max(old_r1, new_r1))
+        dc1 = int(max(old_c1, new_c1))
 
-        # Compact new feature mask (bbox-sized, not H×W).
+        # Compact new feature mask; update the per-layer bbox array in-place.
         self._feature_masks[feature] = feature.render_mask((new_r0, new_c0, new_r1, new_c1))
-        self._feature_bboxes[feature] = (new_r0, new_c0, new_r1, new_c1)
+        layer_bboxes[feat_idx] = (new_r0, new_c0, new_r1, new_c1)
 
         # Snapshot old layer mask in dirty region.
         old_lm_sub = self._layer_masks[layer][dr0:dr1, dc0:dc1].copy()
 
-        # Rebuild layer mask in dirty region by splatting compact feature masks.
-        # Only features whose bboxes overlap the dirty region contribute.
+        # Vectorised overlap test.
+        hit = ((layer_bboxes[:, 0] < dr1) & (layer_bboxes[:, 2] > dr0) &
+               (layer_bboxes[:, 1] < dc1) & (layer_bboxes[:, 3] > dc0))
+
+        # Rebuild layer mask in dirty region by splatting only overlapping features.
         lm_sub = self._layer_masks[layer][dr0:dr1, dc0:dc1]
         lm_sub[:] = False
-        for f in layer.features:
-            fr0, fc0, fr1, fc1 = self._feature_bboxes[f]
+        for idx in np.where(hit)[0]:
+            fr0, fc0, fr1, fc1 = layer_bboxes[idx]
             ir0, ic0 = max(fr0, dr0), max(fc0, dc0)
             ir1, ic1 = min(fr1, dr1), min(fc1, dc1)
-            if ir0 >= ir1 or ic0 >= ic1:
-                continue
             lm_sub[ir0-dr0:ir1-dr0, ic0-dc0:ic1-dc0] |= (
-                self._feature_masks[f][ir0-fr0:ir1-fr0, ic0-fc0:ic1-fc0]
+                self._feature_masks[layer.features[idx]][ir0-fr0:ir1-fr0, ic0-fc0:ic1-fc0]
             )
 
         delta_sub = old_lm_sub ^ lm_sub
