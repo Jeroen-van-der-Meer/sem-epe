@@ -288,15 +288,17 @@ class Layout:
     -----------
     :meth:`render` populates three dictionaries:
 
-    * ``_feature_masks``  — one boolean (H, W) array per :class:`Feature`.
+    * ``_feature_masks``  — compact boolean array per :class:`Feature`, sized
+      to the feature's bounding box.
     * ``_layer_masks``    — union boolean (H, W) array per :class:`Layer`.
     * ``_feature_bboxes`` — last-rendered bounding box per :class:`Feature`.
 
     :meth:`rerender_feature` uses these caches to restrict all work to the
-    dirty subregion, which is the union of the feature's old and new bounding
-    boxes.  No H×W arrays are allocated; every operation touches only the
-    small dirty patch.  This is critical for the inner loop of nonlinear
-    least-squares fitting.
+    dirty subregion (union of old and new bounding boxes).  Feature masks are
+    compact, so no H×W arrays are allocated per feature; the layer mask is
+    rebuilt by splatting only the features whose bboxes overlap the dirty
+    region.  This is critical for the inner loop of nonlinear least-squares
+    fitting.
 
     Parameters
     ----------
@@ -344,10 +346,12 @@ class Layout:
         for layer in self.layers:
             lm = np.zeros(self.shape, dtype=bool)
             for f in layer.features:
-                fm = f.render_mask((0, 0, self.height, self.width))
+                bbox = f.bounding_box(self.shape)
+                r0, c0, r1, c1 = bbox
+                fm = f.render_mask(bbox)        # compact: shape (r1-r0, c1-c0)
                 self._feature_masks[f] = fm
-                self._feature_bboxes[f] = f.bounding_box(self.shape)
-                lm |= fm
+                self._feature_bboxes[f] = bbox
+                lm[r0:r1, c0:c1] |= fm
             self._layer_masks[layer] = lm
             image[lm] = layer.gray_value
 
@@ -392,7 +396,6 @@ class Layout:
         layer = feature.layer
 
         # Dirty region = union of old and new bounding boxes.
-        # bounding_box() is pure arithmetic — no numpy, no allocation.
         old_r0, old_c0, old_r1, old_c1 = self._feature_bboxes[feature]
         new_r0, new_c0, new_r1, new_c1 = feature.bounding_box(self.shape)
         dr0 = min(old_r0, new_r0)
@@ -400,28 +403,32 @@ class Layout:
         dr1 = max(old_r1, new_r1)
         dc1 = max(old_c1, new_c1)
 
-        # New feature mask computed only within the dirty subregion.
-        new_fm_sub = feature.render_mask((dr0, dc0, dr1, dc1))
+        # Compact new feature mask (bbox-sized, not H×W).
+        self._feature_masks[feature] = feature.render_mask((new_r0, new_c0, new_r1, new_c1))
+        self._feature_bboxes[feature] = (new_r0, new_c0, new_r1, new_c1)
 
-        # Update the stored full-size feature mask in-place; only the dirty
-        # subregion can have changed, so we overwrite exactly that slice.
-        self._feature_masks[feature][dr0:dr1, dc0:dc1] = new_fm_sub
-
-        # Snapshot the old layer mask in the dirty subregion before rebuilding.
+        # Snapshot old layer mask in dirty region.
         old_lm_sub = self._layer_masks[layer][dr0:dr1, dc0:dc1].copy()
 
-        # Rebuild the layer mask in-place within the dirty region only.
-        # All feature-mask slices are views — no extra allocation.
+        # Rebuild layer mask in dirty region by splatting compact feature masks.
+        # Only features whose bboxes overlap the dirty region contribute.
         lm_sub = self._layer_masks[layer][dr0:dr1, dc0:dc1]
         lm_sub[:] = False
         for f in layer.features:
-            lm_sub |= self._feature_masks[f][dr0:dr1, dc0:dc1]
+            fr0, fc0, fr1, fc1 = self._feature_bboxes[f]
+            ir0, ic0 = max(fr0, dr0), max(fc0, dc0)
+            ir1, ic1 = min(fr1, dr1), min(fc1, dc1)
+            if ir0 >= ir1 or ic0 >= ic1:
+                continue
+            lm_sub[ir0-dr0:ir1-dr0, ic0-dc0:ic1-dc0] |= (
+                self._feature_masks[f][ir0-fr0:ir1-fr0, ic0-fc0:ic1-fc0]
+            )
 
         delta_sub = old_lm_sub ^ lm_sub
 
-        self._feature_bboxes[feature] = (new_r0, new_c0, new_r1, new_c1)
+        if not delta_sub.any():
+            return self._image
 
-        # Re-composite only the changed pixels, considering all layers in order.
         sub_img = self._image[dr0:dr1, dc0:dc1]
         sub_img[delta_sub] = self.background
         for lyr in self.layers:

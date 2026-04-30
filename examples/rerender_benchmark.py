@@ -2,26 +2,38 @@
 
 import time
 
-from sem_epe import Layer, Layout, Line, Pillar, Orientation
+import matplotlib.pyplot as plt
+import math
+import numpy as np
 
-nstep = 100
+from sem_epe import Layer, Layout, Line, Pillar, Orientation
 
 t0 = time.perf_counter()
 
 # --- Setup ---
 
-layout = Layout(height=2048, width=2048, background=0.1)
+imsize = 2048
+pitch = 32
 
-metal1 = Layer(name="metal1", gray_value=0.5, z_order=0)
-metal1.add_feature(Line(Orientation.VERTICAL, thickness=32, position=1000))
+layout = Layout(height=imsize, width=imsize, background=0.05)
+
+metal1 = Layer(name="metal1", gray_value=0.3, z_order=1)
+for col in range(pitch // 2, imsize, 2 * pitch):
+    metal1.add_feature(Line(Orientation.VERTICAL, thickness=pitch//2, position=col))
+nfeat_m1 = len(metal1.features)
 layout.add_layer(metal1)
 
-via1 = Layer(name="via1", gray_value=0.3, z_order=2)
-via1.add_feature(Pillar(x=1000, y=1000 - nstep // 2, diameter=40))
+via1 = Layer(name="via1", gray_value=0.8, z_order=2)
+for col in range(pitch // 2, imsize, 2 * pitch):
+    for row in range(pitch // 2, imsize, pitch):
+        via1.add_feature(Pillar(x=col, y=row, diameter=pitch/math.sqrt(2)))
+nfeat_v1 = len(via1.features)
 layout.add_layer(via1)
 
-metal2 = Layer(name="metal2", gray_value=0.9, z_order=3)
-metal2.add_feature(Line(Orientation.HORIZONTAL, thickness=32, position=1000))
+metal2 = Layer(name="metal2", gray_value=0.2, z_order=3)
+for row in range(pitch // 2, imsize, pitch):
+    metal2.add_feature(Line(Orientation.HORIZONTAL, thickness=pitch//2, position=row))
+nfeat_m2 = len(metal2.features)
 layout.add_layer(metal2)
 
 t1 = time.perf_counter()
@@ -35,32 +47,40 @@ print(f"Image:   shape={img_initial.shape}, "
 
 t2 = time.perf_counter()
 
-# --- Incremental re-render of pillar ---
+# --- Incremental re-render of M1 lines ---
 
-pillar = via1.features[0]
-for i in range(nstep):
-    pillar.y += 1
-    layout.rerender_feature(pillar)
+for f in metal1.features:
+    f.position += 1
+    layout.rerender_feature(f)
 
 t3 = time.perf_counter()
 
-# --- Incremental re-render of pillar ---
+# --- Incremental re-render of V1 pillars ---
 
-line = metal1.features[0]
-for i in range(nstep):
-    line.position += 1
-    layout.rerender_feature(line)
+for f in via1.features:
+    f.x += 1
+    layout.rerender_feature(f)
 
 t4 = time.perf_counter()
 
-print(f"Setup time:                 {t1 - t0:.6f} s")
-print(f"Initial render time:        {t2 - t1:.6f} s")
-print(f"Re-render pillar loop time: {t3 - t2:.6f} s")
-print(f"Re-render line loop time:   {t4 - t3:.6f} s")
+# --- Incremental re-render of M2 lines ---
+
+for f in metal2.features:
+    f.position += 1
+    layout.rerender_feature(f)
+
+t5 = time.perf_counter()
+
+print(f"Setup time:           {((t1 - t0) * 1000):.3f} ms")
+print(f"Initial render time:  {((t2 - t1) * 1000):.3f} ms")
+print(f"Average re-render M1: {((t3 - t2) / nfeat_m1 * 1000):.3f} ms")
+print(f"Average re-render V1: {((t4 - t3) / nfeat_v1 * 1000):.3f} ms")
+print(f"Average re-render M2: {((t5 - t4) / nfeat_m2 * 1000):.3f} ms")
 
 """
-Setup time:                 0.000137 s
-Initial render time:        0.119352 s
-Re-render pillar loop time: 0.059887 s
-Re-render line loop time:   0.223204 s
+Setup time:           2.544 ms
+Initial render time:  84.308 ms
+Average re-render M1: 0.701 ms
+Average re-render V1: 0.547 ms
+Average re-render M2: 0.094 ms
 """
