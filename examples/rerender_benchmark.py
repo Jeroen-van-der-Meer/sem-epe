@@ -28,34 +28,39 @@ t1 = time.perf_counter()
 
 # --- Initial render ---
 
-img_initial = layout.render()
+img_initial = layout.render().copy()
 print(f"Layout:  {layout}")
 print(f"Image:   shape={img_initial.shape}, "
       f"min={img_initial.min():.2f}, max={img_initial.max():.2f}")
 
 t2 = time.perf_counter()
 
-# --- Incremental re-render ---
+# --- Incremental re-render of pillar ---
 
 pillar = via1.features[0]
 for i in range(nstep):
     pillar.y += 1
-    img_updated = layout.rerender_feature(pillar)
+    layout.rerender_feature(pillar)
 
 t3 = time.perf_counter()
 
-print(f"Setup time:              {t1 - t0:.6f} s")
-print(f"Initial render time:     {t2 - t1:.6f} s")
-print(f"Re-render loop time:     {t3 - t2:.6f} s")
-print(f"Re-render time per step: {(t3 - t2)/nstep:.6f} s")
+# --- Incremental re-render of pillar ---
+
+line = metal1.features[0]
+for i in range(nstep):
+    line.position += 1
+    layout.rerender_feature(line)
+
+t4 = time.perf_counter()
+
+print(f"Setup time:                 {t1 - t0:.6f} s")
+print(f"Initial render time:        {t2 - t1:.6f} s")
+print(f"Re-render pillar loop time: {t3 - t2:.6f} s")
+print(f"Re-render line loop time:   {t4 - t3:.6f} s")
 
 """
-Last run on my T14:
-
-Setup time:              0.000125 s
-Initial render time:     0.078246 s
-Re-render loop time:     6.325459 s
-Re-render time per step: 0.063255 s
-
-That's out of spec by many orders of magnitude
+Setup time:                 0.000137 s
+Initial render time:        0.119352 s
+Re-render pillar loop time: 0.059887 s
+Re-render line loop time:   0.223204 s
 """

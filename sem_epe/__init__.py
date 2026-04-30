@@ -62,19 +62,20 @@ class Feature(ABC):
         self.layer: "Layer"
 
     @abstractmethod
-    def render_mask(self, shape: Tuple[int, int]) -> np.ndarray:
+    def render_mask(self, roi: Tuple[int, int, int, int]) -> np.ndarray:
         """
-        Pixel footprint of this feature.
+        Pixel footprint of this feature within *roi*.
 
         Parameters
         ----------
-        shape : (H, W)
-            Image dimensions in pixels.
+        roi : (r0, c0, r1, c1)
+            Subregion of the canvas to render, in image-space pixel
+            coordinates.  Pass ``(0, 0, height, width)`` for the full image.
 
         Returns
         -------
-        np.ndarray, dtype=bool, shape=(H, W)
-            ``True`` at every pixel covered by this feature.
+        np.ndarray, dtype=bool, shape=(r1-r0, c1-c0)
+            ``True`` at every pixel within *roi* covered by this feature.
         """
 
     @abstractmethod
@@ -126,30 +127,31 @@ class Line(Feature):
         self.position: float = float(position)
         self.extent: Optional[Tuple[float, float]] = extent
 
-    def render_mask(self, shape: Tuple[int, int]) -> np.ndarray:
-        h, w = shape
-        mask = np.zeros(shape, dtype=bool)
+    def render_mask(self, roi: Tuple[int, int, int, int]) -> np.ndarray:
+        r0, c0, r1, c1 = roi
+        h, w = r1 - r0, c1 - c0
+        mask = np.zeros((h, w), dtype=bool)
         half = self.thickness / 2.0
 
         if self.orientation == Orientation.HORIZONTAL:
-            r0 = max(0, int(np.floor(self.position - half)))
-            r1 = min(h, int(np.ceil(self.position + half)))
+            mr0 = max(0, int(np.floor(self.position - half)) - r0)
+            mr1 = min(h, int(np.ceil(self.position + half)) - r0)
             if self.extent is None:
-                c0, c1 = 0, w
+                mc0, mc1 = 0, w
             else:
-                c0 = max(0, int(np.floor(self.extent[0])))
-                c1 = min(w, int(np.ceil(self.extent[1])))
+                mc0 = max(0, int(np.floor(self.extent[0])) - c0)
+                mc1 = min(w, int(np.ceil(self.extent[1])) - c0)
         else:  # VERTICAL
-            c0 = max(0, int(np.floor(self.position - half)))
-            c1 = min(w, int(np.ceil(self.position + half)))
+            mc0 = max(0, int(np.floor(self.position - half)) - c0)
+            mc1 = min(w, int(np.ceil(self.position + half)) - c0)
             if self.extent is None:
-                r0, r1 = 0, h
+                mr0, mr1 = 0, h
             else:
-                r0 = max(0, int(np.floor(self.extent[0])))
-                r1 = min(h, int(np.ceil(self.extent[1])))
+                mr0 = max(0, int(np.floor(self.extent[0])) - r0)
+                mr1 = min(h, int(np.ceil(self.extent[1])) - r0)
 
-        if r0 < r1 and c0 < c1:
-            mask[r0:r1, c0:c1] = True
+        if mr0 < mr1 and mc0 < mc1:
+            mask[mr0:mr1, mc0:mc1] = True
         return mask
 
     def bounding_box(self, shape: Tuple[int, int]) -> Tuple[int, int, int, int]:
@@ -203,11 +205,12 @@ class Pillar(Feature):
         self.y: float = float(y)
         self.diameter: float = float(diameter)
 
-    def render_mask(self, shape: Tuple[int, int]) -> np.ndarray:
-        h, w = shape
+    def render_mask(self, roi: Tuple[int, int, int, int]) -> np.ndarray:
+        r0, c0, r1, c1 = roi
+        h, w = r1 - r0, c1 - c0
         rows, cols = np.ogrid[:h, :w]
         radius = self.diameter / 2.0
-        return (cols - self.x) ** 2 + (rows - self.y) ** 2 <= radius ** 2
+        return (cols - (self.x - c0)) ** 2 + (rows - (self.y - r0)) ** 2 <= radius ** 2
 
     def bounding_box(self, shape: Tuple[int, int]) -> Tuple[int, int, int, int]:
         h, w = shape
@@ -254,11 +257,12 @@ class Layer:
         self.features.append(feature)
         return self
 
-    def render_mask(self, shape: Tuple[int, int]) -> np.ndarray:
-        """Union pixel mask of every feature in this layer."""
-        mask = np.zeros(shape, dtype=bool)
+    def render_mask(self, roi: Tuple[int, int, int, int]) -> np.ndarray:
+        """Union pixel mask of every feature in this layer within *roi*."""
+        r0, c0, r1, c1 = roi
+        mask = np.zeros((r1 - r0, c1 - c0), dtype=bool)
         for f in self.features:
-            mask |= f.render_mask(shape)
+            mask |= f.render_mask(roi)
         return mask
 
     def __repr__(self) -> str:
@@ -282,14 +286,17 @@ class Layout:
 
     Mask caches
     -----------
-    :meth:`render` populates two dictionaries:
+    :meth:`render` populates three dictionaries:
 
-    * ``_feature_masks`` — one boolean (H, W) array per :class:`Feature`.
-    * ``_layer_masks``   — union boolean (H, W) array per :class:`Layer`.
+    * ``_feature_masks``  — one boolean (H, W) array per :class:`Feature`.
+    * ``_layer_masks``    — union boolean (H, W) array per :class:`Layer`.
+    * ``_feature_bboxes`` — last-rendered bounding box per :class:`Feature`.
 
-    :meth:`rerender_feature` uses these caches to limit recompositing to
-    only the pixels whose coverage state has changed, which is critical for
-    the inner loop of nonlinear least-squares fitting.
+    :meth:`rerender_feature` uses these caches to restrict all work to the
+    dirty subregion, which is the union of the feature's old and new bounding
+    boxes.  No H×W arrays are allocated; every operation touches only the
+    small dirty patch.  This is critical for the inner loop of nonlinear
+    least-squares fitting.
 
     Parameters
     ----------
@@ -307,6 +314,7 @@ class Layout:
 
         self._feature_masks: Dict[Feature, np.ndarray] = {}
         self._layer_masks: Dict[Layer, np.ndarray] = {}
+        self._feature_bboxes: Dict[Feature, Tuple[int, int, int, int]] = {}
         self._image: Optional[np.ndarray] = None
 
     def add_layer(self, layer: Layer) -> "Layout":
@@ -328,21 +336,23 @@ class Layout:
         Returns
         -------
         np.ndarray, dtype=float32, shape=(H, W)
-            Rendered image with pixel values in [0, 1].
+            The internal image buffer.  Do not modify in place; call
+            :meth:`render` or :meth:`rerender_feature` to update it.
         """
         image = np.full(self.shape, self.background, dtype=np.float32)
 
         for layer in self.layers:
             lm = np.zeros(self.shape, dtype=bool)
             for f in layer.features:
-                fm = f.render_mask(self.shape)
+                fm = f.render_mask((0, 0, self.height, self.width))
                 self._feature_masks[f] = fm
-                lm |= fm # Layers in self.layers are sorted in z
+                self._feature_bboxes[f] = f.bounding_box(self.shape)
+                lm |= fm
             self._layer_masks[layer] = lm
             image[lm] = layer.gray_value
 
         self._image = image
-        return image.copy()
+        return self._image
 
     def rerender_feature(self, feature: Feature) -> np.ndarray:
         """
@@ -376,41 +386,56 @@ class Layout:
         Returns
         -------
         np.ndarray, dtype=float32, shape=(H, W)
-            Updated rendered image.
+            The internal image buffer, updated in place.  Do not modify
+            in place; call :meth:`rerender_feature` again to update it.
         """
         layer = feature.layer
 
-        new_fm = feature.render_mask(self.shape)
-        self._feature_masks[feature] = new_fm
+        # Dirty region = union of old and new bounding boxes.
+        # bounding_box() is pure arithmetic — no numpy, no allocation.
+        old_r0, old_c0, old_r1, old_c1 = self._feature_bboxes[feature]
+        new_r0, new_c0, new_r1, new_c1 = feature.bounding_box(self.shape)
+        dr0 = min(old_r0, new_r0)
+        dc0 = min(old_c0, new_c0)
+        dr1 = max(old_r1, new_r1)
+        dc1 = max(old_c1, new_c1)
 
-        old_lm = self._layer_masks[layer]
-        new_lm = np.zeros(self.shape, dtype=bool)
+        # New feature mask computed only within the dirty subregion.
+        new_fm_sub = feature.render_mask((dr0, dc0, dr1, dc1))
+
+        # Update the stored full-size feature mask in-place; only the dirty
+        # subregion can have changed, so we overwrite exactly that slice.
+        self._feature_masks[feature][dr0:dr1, dc0:dc1] = new_fm_sub
+
+        # Snapshot the old layer mask in the dirty subregion before rebuilding.
+        old_lm_sub = self._layer_masks[layer][dr0:dr1, dc0:dc1].copy()
+
+        # Rebuild the layer mask in-place within the dirty region only.
+        # All feature-mask slices are views — no extra allocation.
+        lm_sub = self._layer_masks[layer][dr0:dr1, dc0:dc1]
+        lm_sub[:] = False
         for f in layer.features:
-            new_lm |= self._feature_masks[f]
-        self._layer_masks[layer] = new_lm
+            lm_sub |= self._feature_masks[f][dr0:dr1, dc0:dc1]
 
-        delta = old_lm ^ new_lm
+        delta_sub = old_lm_sub ^ lm_sub
 
-        rows, cols = np.where(delta)
-        r0, r1 = int(rows.min()), int(rows.max()) + 1
-        c0, c1 = int(cols.min()), int(cols.max()) + 1
+        self._feature_bboxes[feature] = (new_r0, new_c0, new_r1, new_c1)
 
-        sub_delta = delta[r0:r1, c0:c1]
-
-        sub_img = self._image[r0:r1, c0:c1]
-        sub_img[sub_delta] = self.background
+        # Re-composite only the changed pixels, considering all layers in order.
+        sub_img = self._image[dr0:dr1, dc0:dc1]
+        sub_img[delta_sub] = self.background
         for lyr in self.layers:
-            sub_lm = self._layer_masks[lyr][r0:r1, c0:c1]
-            covered = sub_delta & sub_lm
+            sub_lm = self._layer_masks[lyr][dr0:dr1, dc0:dc1]
+            covered = delta_sub & sub_lm
             if covered.any():
                 sub_img[covered] = lyr.gray_value
 
-        return self._image.copy()
+        return self._image
 
     @property
     def image(self) -> Optional[np.ndarray]:
-        """Current cached image, or ``None`` if :meth:`render` has not been called."""
-        return None if self._image is None else self._image.copy()
+        """The internal image buffer, or ``None`` if :meth:`render` has not been called."""
+        return self._image
 
     def __repr__(self) -> str:
         names = ", ".join(l.name for l in self.layers)

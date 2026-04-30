@@ -20,7 +20,7 @@ layout.add_layer(metal2)
 metal1.add_feature(Pillar(x=220, y=80, diameter=100))
 metal2.add_feature(Pillar(x=170, y=80, diameter=40))
 
-img_initial = layout.render()
+img_initial = layout.render().copy()
 print(f"Layout:  {layout}")
 print(f"Image:   shape={img_initial.shape}, "
       f"min={img_initial.min():.2f}, max={img_initial.max():.2f}")
@@ -28,12 +28,12 @@ print(f"Image:   shape={img_initial.shape}, "
 vline = metal1.features[0]
 print(f"\nMoving {vline} by +5 px …")
 vline.position += 5
-img_updated = layout.rerender_feature(vline)
+img_updated = layout.rerender_feature(vline).copy()
 
 smallpillar = metal2.features[2]
-print(f"\nMoving {smallpillar} by -50 px …")
+print(f"\nMoving {smallpillar} by -25 px …")
 smallpillar.x -= 50
-img_updated = layout.rerender_feature(smallpillar)
+img_updated = layout.rerender_feature(smallpillar).copy()
 
 diff = np.abs(img_updated.astype(float) - img_initial.astype(float))
 changed_px = int((diff > 0).sum())
@@ -43,7 +43,7 @@ fig, axes = plt.subplots(1, 3, figsize=(12, 4))
 axes[0].imshow(img_initial, cmap="gray", vmin=0, vmax=1)
 axes[0].set_title("Initial render")
 axes[1].imshow(img_updated, cmap="gray", vmin=0, vmax=1)
-axes[1].set_title("Vertical line +5 px; pillar -10 px")
+axes[1].set_title("Vertical line +5 px; pillar -25 px")
 axes[2].imshow(diff, cmap="hot")
 axes[2].set_title("Pixel difference")
 for ax in axes:
