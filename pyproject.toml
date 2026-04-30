@@ -1,0 +1,14 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sem-epe"
+version = "0.1.0"
+description = "Layer-aware SEM image EPE (Edge Placement Error) analysis"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["sem_epe"]
