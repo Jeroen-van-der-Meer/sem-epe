@@ -1,6 +1,7 @@
 """How long does it take to re-render an image?"""
 
 import time
+import matplotlib.pyplot as plt
 import math
 
 from sem_epe import Layer, Layout, Line, Pillar, Orientation
@@ -38,9 +39,6 @@ t1 = time.perf_counter()
 # --- Initial render ---
 
 img_initial = layout.render().copy()
-print(f"Layout:  {layout}")
-print(f"Image:   shape={img_initial.shape}, "
-      f"min={img_initial.min():.2f}, max={img_initial.max():.2f}")
 
 t2 = time.perf_counter()
 
@@ -81,3 +79,6 @@ Average re-render M1: 0.645 ms
 Average re-render V1: 0.089 ms
 Average re-render M2: 0.095 ms
 """
+
+plt.imshow(img_initial, cmap="gray", vmin=0, vmax=1)
+plt.show()
