@@ -3,19 +3,35 @@ sem_epe — Layer-aware SEM image EPE (Edge Placement Error) analysis tooling.
 """
 
 from .render import (
-    Orientation,
     Feature,
+    Orientation,
+    Layer,
+    Layout,
     Line,
     Pillar,
-    Layer,
-    Layout
+)
+from .image import (
+    SEMImage,
+)
+from .tune import (
+    ParameterSet,
+    Tuner,
+)
+from .fit import (
+    fit,
+    FitResult,
 )
 
 __all__ = [
-    "Orientation",
     "Feature",
-    "Line",
-    "Pillar",
+    "fit",
+    "FitResult",
+    "Orientation",
     "Layer",
     "Layout",
+    "Line",
+    "ParameterSet",
+    "Pillar",
+    "SEMImage",
+    "Tuner",
 ]
