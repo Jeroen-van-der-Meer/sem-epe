@@ -211,6 +211,7 @@ class Tuner:
             self.residuals,
             x0=self.params.get(),
             method="trf",
+            jac="3-point",
             jac_sparsity=self.jacobian_sparsity(),
             bounds=self.params.bounds,
             **kwargs,
