@@ -5,6 +5,9 @@ import time
 
 import numpy as np
 
+import cProfile
+import pstats
+
 import sem_epe as epe
 from sem_epe import vis
 
@@ -144,11 +147,18 @@ nom_cd_M2  = np.array([f.thickness for f in fit_features_M2])
 
 t0 = time.perf_counter()
 
-result = epe.fit(
+#profiler = cProfile.Profile()
+#profiler.enable()
+
+result = epe.fit_per_feature(
     sem_image,
     fit_layout,
     params
 )
+
+#profiler.disable()
+#stats = pstats.Stats(profiler)
+#stats.sort_stats('cumtime').print_stats(20)
 
 t1 = time.perf_counter()
 
@@ -238,18 +248,20 @@ plt.show()
 vis.plot_fit(sem_image, result)
 
 """
+512x512; single per-feature tuning pass:
+
 Number of tunable parameters: 432
-Fit: 12399 ms
-RMS: 0.16565
+Fit: 1795 ms
+RMS: 0.16578
 
 Error statistics:
 Layer  Variable             mean           L2          max
 ----------------------------------------------------------
-M1     position         0.059 px     0.193 px     0.125 px
-       thickness        0.399 px     1.182 px     0.610 px
-V1     x                0.127 px     1.768 px     0.424 px
-       y                0.130 px     3.540 px     2.662 px
-       diameter         0.156 px     4.818 px     3.737 px
-M2     position         0.021 px     0.106 px     0.057 px
-       thickness        0.111 px     0.503 px     0.205 px
+M1     position         0.055 px     0.189 px     0.122 px
+       thickness        0.468 px     1.513 px     1.107 px
+V1     x                0.181 px     2.635 px     0.710 px
+       y                0.095 px     1.475 px     0.535 px
+       diameter         0.156 px     2.390 px     0.938 px
+M2     position         0.053 px     0.245 px     0.114 px
+       thickness        0.167 px     0.772 px     0.365 px
 """

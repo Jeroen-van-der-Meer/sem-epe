@@ -19,12 +19,18 @@ from .tune import (
 )
 from .fit import (
     fit,
+    fit_global,
+    fit_per_layer,
+    fit_per_feature,
     FitResult,
 )
 
 __all__ = [
     "Feature",
     "fit",
+    "fit_global",
+    "fit_per_layer",
+    "fit_per_feature",
     "FitResult",
     "Orientation",
     "Layer",

@@ -140,6 +140,7 @@ class Tuner:
         layout: Layout,
         target: np.ndarray,
         params: ParameterSet,
+        roi: "Tuple[int, int, int, int] | None" = None,
     ) -> None:
         if target.shape != layout.shape:
             raise ValueError(
@@ -148,6 +149,10 @@ class Tuner:
         self.layout = layout
         self.target = target.astype(np.float32)
         self.params = params
+        self._roi = roi
+        if roi is not None:
+            r0, c0, r1, c1 = roi
+            self._target_roi: np.ndarray = self.target[r0:r1, c0:c1]
 
     # ------------------------------------------------------------------
 
@@ -164,6 +169,9 @@ class Tuner:
         self.params.set(x)
         for feature in self.params.features:
             self.layout.rerender_feature(feature)
+        if self._roi is not None:
+            r0, c0, r1, c1 = self._roi
+            return (self.layout.image[r0:r1, c0:c1] - self._target_roi).ravel()
         return (self.layout.image - self.target).ravel()
 
     def jacobian_sparsity(self) -> scipy.sparse.spmatrix:
@@ -204,20 +212,24 @@ class Tuner:
         ``max_nfev``).
 
         On return the best-found parameters are written back into the features
-        and the layout is re-rendered from scratch so ``layout.image`` reflects
-        the result.
+        and the layout image is updated incrementally via
+        :meth:`~Layout.rerender_feature`.  Callers that need a fully
+        consistent render (e.g. after all features have been fitted) should
+        call ``layout.render()`` themselves.
         """
+        jac_sparsity = None if self._roi is not None else self.jacobian_sparsity()
         result = scipy.optimize.least_squares(
             self.residuals,
             x0=self.params.get(),
             method="trf",
             jac="3-point",
-            jac_sparsity=self.jacobian_sparsity(),
+            jac_sparsity=jac_sparsity,
             bounds=self.params.bounds,
             **kwargs,
         )
 
         self.params.set(result.x)
-        self.layout.render()
+        for feature in self.params.features:
+            self.layout.rerender_feature(feature)
         return result
 
