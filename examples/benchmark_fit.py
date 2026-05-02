@@ -12,184 +12,195 @@ RNG = np.random.default_rng(0)
 
 IMSIZE      = 512
 PITCH       = 32
-PERTURB_POS = 1.0    # std dev of position / centre perturbation (pixels)
-PERTURB_CD  = 0.5    # std dev of CD (thickness / diameter) perturbation (pixels)
-DEVIATION   = 6.0    # optimisation bound: nominal ± DEVIATION
-NOISE_SIGMA = 0.02   # Gaussian noise added to the reference render
+PERTURB_POS = 1.0   # std of position perturbation (pixels)
+PERTURB_CD  = 0.5   # std of CD perturbation (pixels)
+DEVIATION   = 6.0   # optimisation bound: nominal ± DEVIATION
+NOISE_SIGMA = 0.2   # Gaussian noise added to the SEM image
 
-# ---------------------------------------------------------------------------
-# Reference layout
-# ---------------------------------------------------------------------------
+# Generate SEM layout and fit layout. The SEM layout will be used to generate
+# the SEM image, while the fit layout will serve as the starting point for the
+# optimization algorithm.
 
-ref_layout = epe.Layout(height=IMSIZE, width=IMSIZE, background=0.05)
+sem_layout = epe.Layout(height=IMSIZE, width=IMSIZE, background=0.05)
+fit_layout = epe.Layout(height=IMSIZE, width=IMSIZE, background=0.05)
 
-ref_m1   = epe.Layer("metal1", gray_value=0.3, z_order=1)
-ref_via1 = epe.Layer("via1",   gray_value=0.8, z_order=2)
-ref_m2   = epe.Layer("metal2", gray_value=0.2, z_order=3)
+sem_M1 = epe.Layer("M1", gray_value=0.3, z_order=1)
+sem_V1 = epe.Layer("V1", gray_value=0.8, z_order=2)
+sem_M2 = epe.Layer("M2", gray_value=0.2, z_order=3)
 
-ref_m1_feats   = []
+fit_M1 = epe.Layer("M1", gray_value=0.3, z_order=1)
+fit_V1 = epe.Layer("V1", gray_value=0.8, z_order=2)
+fit_M2 = epe.Layer("M2", gray_value=0.2, z_order=3)
+
+sem_features_M1 = []
+fit_features_M1 = []
+delta_pos_M1 = []
+delta_cd_M1 = []
 for col in range(PITCH // 2, IMSIZE, 2 * PITCH):
-    f = epe.Line(epe.Orientation.VERTICAL, thickness=PITCH // 2, position=col)
-    ref_m1.add_feature(f)
-    ref_m1_feats.append(f)
+    dp = RNG.normal(scale=PERTURB_POS)
+    dc = RNG.normal(scale=PERTURB_CD)
 
-ref_via1_feats = []
+    sem_feature = epe.Line(epe.Orientation.VERTICAL, thickness=PITCH // 2 + dc, position=col + dp)
+    sem_M1.add_feature(sem_feature)
+
+    fit_feature = epe.Line(epe.Orientation.VERTICAL, thickness=PITCH // 2, position=col)
+    fit_M1.add_feature(fit_feature)
+
+    sem_features_M1.append(sem_feature)
+    fit_features_M1.append(fit_feature)
+    delta_pos_M1.append(dp)
+    delta_cd_M1.append(dc)
+delta_pos_M1 = np.array(delta_pos_M1)
+delta_cd_M1  = np.array(delta_cd_M1)
+
+sem_features_V1 = []
+fit_features_V1 = []
+delta_x_V1 = []
+delta_y_V1 = []
+delta_cd_V1 = []
 for col in range(PITCH // 2, IMSIZE, 2 * PITCH):
     for row in range(PITCH // 2, IMSIZE, PITCH):
-        f = epe.Pillar(x=col, y=row, diameter=PITCH / math.sqrt(2))
-        ref_via1.add_feature(f)
-        ref_via1_feats.append(f)
+        dx = RNG.normal(scale=PERTURB_POS)
+        dy = RNG.normal(scale=PERTURB_POS)
+        dc = RNG.normal(scale=PERTURB_CD)
 
-ref_m2_feats   = []
+        sem_feature = epe.Pillar(x=col + dx, y=row + dy, diameter=PITCH / math.sqrt(2) + dc)
+        sem_V1.add_feature(sem_feature)
+
+        fit_feature = epe.Pillar(x=col, y=row, diameter=PITCH / math.sqrt(2))
+        fit_V1.add_feature(fit_feature)
+
+        sem_features_V1.append(sem_feature)
+        fit_features_V1.append(fit_feature)
+        delta_x_V1.append(dx)
+        delta_y_V1.append(dy)
+        delta_cd_V1.append(dc)
+delta_x_V1  = np.array(delta_x_V1)
+delta_y_V1  = np.array(delta_y_V1)
+delta_cd_V1 = np.array(delta_cd_V1)
+
+sem_features_M2 = []
+fit_features_M2 = []
+delta_pos_M2 = []
+delta_cd_M2 = []
 for row in range(PITCH // 2, IMSIZE, PITCH):
-    f = epe.Line(epe.Orientation.HORIZONTAL, thickness=PITCH // 2, position=row)
-    ref_m2.add_feature(f)
-    ref_m2_feats.append(f)
+    dp = RNG.normal(scale=PERTURB_POS)
+    dc = RNG.normal(scale=PERTURB_CD)
 
-ref_layout.add_layer(ref_m1)
-ref_layout.add_layer(ref_via1)
-ref_layout.add_layer(ref_m2)
+    sem_feature = epe.Line(epe.Orientation.HORIZONTAL, thickness=PITCH // 2 + dc, position=row + dp)
+    sem_M2.add_feature(sem_feature)
 
-clean = ref_layout.render().copy()
+    fit_feature = epe.Line(epe.Orientation.HORIZONTAL, thickness=PITCH // 2, position=row)
+    fit_M2.add_feature(fit_feature)
+
+    sem_features_M2.append(sem_feature)
+    fit_features_M2.append(fit_feature)
+    delta_pos_M2.append(dp)
+    delta_cd_M2.append(dc)
+delta_pos_M2 = np.array(delta_pos_M2)
+delta_cd_M2  = np.array(delta_cd_M2)
+
+sem_layout.add_layer(sem_M1)
+sem_layout.add_layer(sem_V1)
+sem_layout.add_layer(sem_M2)
+
+fit_layout.add_layer(fit_M1)
+fit_layout.add_layer(fit_V1)
+fit_layout.add_layer(fit_M2)
+
+# Add noise to SEM layout to generate input SEM image.
+
+clean = sem_layout.render()
 noisy = np.clip(
     clean + RNG.normal(scale=NOISE_SIGMA, size=clean.shape).astype(np.float32),
     0.0, 1.0,
 ).astype(np.float32)
-ref_image = epe.SEMImage(noisy, nm_per_pixel=1.0)
+sem_image = epe.SEMImage(noisy, nm_per_pixel=1.0)
 
-# ---------------------------------------------------------------------------
-# Perturbed (fit) layout
-# ---------------------------------------------------------------------------
-
-fit_layout = epe.Layout(height=IMSIZE, width=IMSIZE, background=0.05)
-
-fit_m1   = epe.Layer("metal1", gray_value=0.3, z_order=1)
-fit_via1 = epe.Layer("via1",   gray_value=0.8, z_order=2)
-fit_m2   = epe.Layer("metal2", gray_value=0.2, z_order=3)
-
-# programmed_deltas[i] = (delta_pos, delta_cd) applied to fit feature i
-m1_deltas_prog   = []
-fit_m1_feats = []
-for ref in ref_m1_feats:
-    dp, dc = RNG.normal(scale=PERTURB_POS), RNG.normal(scale=PERTURB_CD)
-    f = epe.Line(
-        epe.Orientation.VERTICAL,
-        thickness=ref.thickness + dc,
-        position =ref.position  + dp,
-    )
-    fit_m1.add_feature(f)
-    fit_m1_feats.append(f)
-    m1_deltas_prog.append((dp, dc))
-
-via1_deltas_prog = []
-fit_via1_feats = []
-for ref in ref_via1_feats:
-    dx, dy, dc = RNG.normal(scale=PERTURB_POS), RNG.normal(scale=PERTURB_POS), RNG.normal(scale=PERTURB_CD)
-    f = epe.Pillar(
-        x       =ref.x        + dx,
-        y       =ref.y        + dy,
-        diameter=ref.diameter + dc,
-    )
-    fit_via1.add_feature(f)
-    fit_via1_feats.append(f)
-    via1_deltas_prog.append((dx, dy, dc))
-
-m2_deltas_prog   = []
-fit_m2_feats = []
-for ref in ref_m2_feats:
-    dp, dc = RNG.normal(scale=PERTURB_POS), RNG.normal(scale=PERTURB_CD)
-    f = epe.Line(
-        epe.Orientation.HORIZONTAL,
-        thickness=ref.thickness + dc,
-        position =ref.position  + dp,
-    )
-    fit_m2.add_feature(f)
-    fit_m2_feats.append(f)
-    m2_deltas_prog.append((dp, dc))
-
-fit_layout.add_layer(fit_m1)
-fit_layout.add_layer(fit_via1)
-fit_layout.add_layer(fit_m2)
+# Collect tunable parameters.
 
 entries = []
-for f in fit_m1_feats:
+for f in fit_features_M1:
     entries += [(f, "position",  -DEVIATION, DEVIATION),
                 (f, "thickness", -DEVIATION, DEVIATION)]
-for f in fit_via1_feats:
-    entries += [(f, "x",        -DEVIATION, DEVIATION),
-                (f, "y",        -DEVIATION, DEVIATION),
-                (f, "diameter", -DEVIATION, DEVIATION)]
-for f in fit_m2_feats:
+for f in fit_features_V1:
+    entries += [(f, "x",         -DEVIATION, DEVIATION),
+                (f, "y",         -DEVIATION, DEVIATION),
+                (f, "diameter",  -DEVIATION, DEVIATION)]
+for f in fit_features_M2:
     entries += [(f, "position",  -DEVIATION, DEVIATION),
                 (f, "thickness", -DEVIATION, DEVIATION)]
 params = epe.ParameterSet(entries)
 print(f"Number of tunable parameters: {len(params)}")
 
-# ---------------------------------------------------------------------------
-# Fit
-# ---------------------------------------------------------------------------
+# Snapshot nominal values before fitting
+nom_pos_M1 = np.array([f.position  for f in fit_features_M1])
+nom_cd_M1  = np.array([f.thickness for f in fit_features_M1])
+nom_x_V1   = np.array([f.x        for f in fit_features_V1])
+nom_y_V1   = np.array([f.y        for f in fit_features_V1])
+nom_cd_V1  = np.array([f.diameter for f in fit_features_V1])
+nom_pos_M2 = np.array([f.position  for f in fit_features_M2])
+nom_cd_M2  = np.array([f.thickness for f in fit_features_M2])
 
 t0 = time.perf_counter()
 
 result = epe.fit(
-    ref_image,
+    sem_image,
     fit_layout,
-    params,
-    ftol=1e-5,
-    max_nfev=500
+    params
 )
 
 t1 = time.perf_counter()
 
-# ---------------------------------------------------------------------------
-# Report
-# ---------------------------------------------------------------------------
+# Report on timing and errors.
 
 print(f"Fit: {(t1 - t0) * 1e3:.0f} ms")
 print(f"RMS: {result.rms_error:.5f}")
 
-def _line_errors(fit_fs, ref_fs):
-    pos = np.array([abs(f.position  - r.position)  for f, r in zip(fit_fs, ref_fs)])
-    cd  = np.array([abs(f.thickness - r.thickness) for f, r in zip(fit_fs, ref_fs)])
-    return pos, cd
+# Recovered deltas and residual errors after fitting.
+rec_pos_M1 = np.array([f.position  for f in fit_features_M1])
+rec_cd_M1  = np.array([f.thickness for f in fit_features_M1])
+rec_x_V1   = np.array([f.x        for f in fit_features_V1])
+rec_y_V1   = np.array([f.y        for f in fit_features_V1])
+rec_cd_V1  = np.array([f.diameter for f in fit_features_V1])
+rec_pos_M2 = np.array([f.position  for f in fit_features_M2])
+rec_cd_M2  = np.array([f.thickness for f in fit_features_M2])
 
-def _pillar_errors(fit_fs, ref_fs):
-    pos = np.array([math.hypot(f.x - r.x, f.y - r.y) for f, r in zip(fit_fs, ref_fs)])
-    cd  = np.array([abs(f.diameter - r.diameter)      for f, r in zip(fit_fs, ref_fs)])
-    return pos, cd
+rec_delta_pos_M1 = rec_pos_M1 - nom_pos_M1
+rec_delta_cd_M1  = rec_cd_M1  - nom_cd_M1
+rec_delta_x_V1   = rec_x_V1   - nom_x_V1
+rec_delta_y_V1   = rec_y_V1   - nom_y_V1
+rec_delta_cd_V1  = rec_cd_V1  - nom_cd_V1
+rec_delta_pos_M2 = rec_pos_M2 - nom_pos_M2
+rec_delta_cd_M2  = rec_cd_M2  - nom_cd_M2
 
-m1_pos, m1_cd = _line_errors(fit_m1_feats,   ref_m1_feats)
-v1_pos, v1_cd = _pillar_errors(fit_via1_feats, ref_via1_feats)
-m2_pos, m2_cd = _line_errors(fit_m2_feats,   ref_m2_feats)
+err_pos_M1 = delta_pos_M1 - rec_delta_pos_M1
+err_cd_M1  = delta_cd_M1  - rec_delta_cd_M1
+err_x_V1   = delta_x_V1   - rec_delta_x_V1
+err_y_V1   = delta_y_V1   - rec_delta_y_V1
+err_cd_V1  = delta_cd_V1  - rec_delta_cd_V1
+err_pos_M2 = delta_pos_M2 - rec_delta_pos_M2
+err_cd_M2  = delta_cd_M2  - rec_delta_cd_M2
 
 print("\nError statistics:")
-hdr = f"{'Layer':<10} {'pos mean':>10} {'pos max':>10} {'CD mean':>10} {'CD max':>10}"
+hdr = f"{'Layer':<6} {'Variable':<12} {'mean':>12} {'L2':>12} {'max':>12}"
 print(hdr)
 print("-" * len(hdr))
-for name, pos, cd in [("metal1", m1_pos, m1_cd),
-                       ("via1",   v1_pos, v1_cd),
-                       ("metal2", m2_pos, m2_cd)]:
-    print(f"{name:<10} {pos.mean():>9.3f}px {pos.max():>9.3f}px "
-          f"{cd.mean():>9.3f}px {cd.max():>9.3f}px")
+rows = [
+    ("M1", "position",  err_pos_M1),
+    ("",   "thickness", err_cd_M1),
+    ("V1", "x",         err_x_V1),
+    ("",   "y",         err_y_V1),
+    ("",   "diameter",  err_cd_V1),
+    ("M2", "position",  err_pos_M2),
+    ("",   "thickness", err_cd_M2),
+]
+for layer, var, err in rows:
+    m, l2, mx = np.mean(np.abs(err)), np.linalg.norm(err), np.max(np.abs(err))
+    print(f"{layer:<6} {var:<12} {m:9.3f} px {l2:9.3f} px {mx:9.3f} px")
 
-"""
-Number of tunable parameters: 432
-Fit: 3108 ms
-RMS: 0.02388
-
-Error statistics:
-Layer        pos mean    pos max    CD mean     CD max
-------------------------------------------------------
-metal1         0.138px     0.796px     0.261px     1.527px
-via1           0.049px     0.227px     0.019px     0.079px
-metal2         0.038px     0.230px     0.073px     0.449px
-
-Not exactly great. Gradients may be dominated by visible features at top?
-"""
-
-# ---------------------------------------------------------------------------
-# Visualise
-# ---------------------------------------------------------------------------
+# Visualize results. (FIXME: May want to make an image plot that helps highlight
+# where the errors were made, rather than using a scatter plot.)
 
 import matplotlib.pyplot as plt
 
@@ -198,49 +209,47 @@ fig, (ax_pos, ax_cd) = plt.subplots(1, 2, figsize=(12, 5))
 def _diag(ax):
     lo = min(ax.get_xlim()[0], ax.get_ylim()[0])
     hi = max(ax.get_xlim()[1], ax.get_ylim()[1])
-    ax.plot([lo, hi], [lo, hi], "k--", lw=0.8, label="perfect recovery")
-    ax.axhline(0, color="gray", lw=0.6, linestyle=":")
+    ax.plot([lo, hi], [lo, hi], "k--", lw=0.8)
 
-prog  = np.array([dp for dp, _ in m1_deltas_prog])
-corr  = prog - np.array([f.position - r.position for f, r in zip(fit_m1_feats, ref_m1_feats)])
-ax_pos.scatter(prog, corr, s=20, alpha=0.9, label="M1 position")
-
-for attr, col in [("x", 0), ("y", 1)]:
-    prog = np.array([d[col] for d in via1_deltas_prog])
-    corr = prog - np.array([getattr(f, attr) - getattr(r, attr)
-                             for f, r in zip(fit_via1_feats, ref_via1_feats)])
-    ax_pos.scatter(prog, corr, s=20, alpha=0.9, label=f"V1 {attr}")
-
-prog  = np.array([dp for dp, _ in m2_deltas_prog])
-corr  = prog - np.array([f.position - r.position for f, r in zip(fit_m2_feats, ref_m2_feats)])
-ax_pos.scatter(prog, corr, s=20, alpha=0.9, label="M2 position")
+ax_pos.scatter(delta_x_V1,   rec_delta_x_V1,   s=30, alpha=0.9, label="V1 X")
+ax_pos.scatter(delta_y_V1,   rec_delta_y_V1,   s=30, alpha=0.9, label="V1 Y")
+ax_pos.scatter(delta_pos_M1, rec_delta_pos_M1, s=30, alpha=0.9, label="M1 position")
+ax_pos.scatter(delta_pos_M2, rec_delta_pos_M2, s=30, alpha=0.9, label="M2 position")
 
 _diag(ax_pos)
-ax_pos.set_xlabel("Programmed Δposition (px)")
-ax_pos.set_ylabel("Correction applied (px)")
+ax_pos.set_xlabel("True Δposition (px)")
+ax_pos.set_ylabel("Recovered Δposition (px)")
 ax_pos.set_title("Position recovery")
 ax_pos.legend(fontsize=8)
 
-prog  = np.array([dc for _, dc in m1_deltas_prog])
-corr  = prog - np.array([f.thickness - r.thickness for f, r in zip(fit_m1_feats, ref_m1_feats)])
-ax_cd.scatter(prog, corr, s=20, alpha=0.9, label="M1 thickness")
-
-prog  = np.array([dc for *_, dc in via1_deltas_prog])
-corr  = prog - np.array([f.diameter - r.diameter for f, r in zip(fit_via1_feats, ref_via1_feats)])
-ax_cd.scatter(prog, corr, s=20, alpha=0.9, label="via diameter")
-
-prog  = np.array([dc for _, dc in m2_deltas_prog])
-corr  = prog - np.array([f.thickness - r.thickness for f, r in zip(fit_m2_feats, ref_m2_feats)])
-ax_cd.scatter(prog, corr, s=20, alpha=0.9, label="M2 thickness")
+ax_cd.scatter(delta_cd_V1, rec_delta_cd_V1, s=30, alpha=0.9, label="V1 diameter")
+ax_cd.scatter(delta_cd_M1, rec_delta_cd_M1, s=30, alpha=0.9, label="M1 thickness")
+ax_cd.scatter(delta_cd_M2, rec_delta_cd_M2, s=30, alpha=0.9, label="M2 thickness")
 
 _diag(ax_cd)
-ax_cd.set_xlabel("Programmed ΔCD (px)")
-ax_cd.set_ylabel("Correction applied (px)")
+ax_cd.set_xlabel("True ΔCD (px)")
+ax_cd.set_ylabel("Recovered ΔCD (px)")
 ax_cd.set_title("CD recovery")
 ax_cd.legend(fontsize=8)
 
 fig.tight_layout()
 plt.show()
 
-vis.plot_fit(ref_image, result)
+vis.plot_fit(sem_image, result)
 
+"""
+Number of tunable parameters: 432
+Fit: 12399 ms
+RMS: 0.16565
+
+Error statistics:
+Layer  Variable             mean           L2          max
+----------------------------------------------------------
+M1     position         0.059 px     0.193 px     0.125 px
+       thickness        0.399 px     1.182 px     0.610 px
+V1     x                0.127 px     1.768 px     0.424 px
+       y                0.130 px     3.540 px     2.662 px
+       diameter         0.156 px     4.818 px     3.737 px
+M2     position         0.021 px     0.106 px     0.057 px
+       thickness        0.111 px     0.503 px     0.205 px
+"""

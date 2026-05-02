@@ -19,10 +19,10 @@ def plot_fit(
 
     Panels
     ------
-    SEM image
-        The SEM image passed to :func:`~sem_epe.fit`.
     Starting render
         The layout render at the perturbed starting point.
+    SEM image
+        The SEM image passed to :func:`~sem_epe.fit`.
     Final render
         The layout render at the optimised parameters.
     Residual
@@ -36,16 +36,16 @@ def plot_fit(
     result : FitResult
         Return value of :func:`~sem_epe.fit`.
     """
-    sem_image       = target.image
     starting_render = result.starting_render
+    sem_image       = target.image
     final_render    = target.image + result.residual
     delta           = result.residual
     vmax_delta      = float(np.abs(delta).max()) or 1e-6
 
     fig, axes = plt.subplots(1, 4, figsize=(16, 4))
     panels = [
-        ("SEM image",       sem_image,       dict(cmap="gray", vmin=0, vmax=1)),
         ("Starting render", starting_render, dict(cmap="gray", vmin=0, vmax=1)),
+        ("SEM image",       sem_image,       dict(cmap="gray", vmin=0, vmax=1)),
         ("Final render",    final_render,    dict(cmap="gray", vmin=0, vmax=1)),
         ("Residual",        delta,           dict(cmap="RdBu", vmin=-vmax_delta, vmax=vmax_delta)),
     ]
