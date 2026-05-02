@@ -1,10 +1,10 @@
 """How long does it take to re-render an image?"""
 
 import time
-import matplotlib.pyplot as plt
 import math
 
 from sem_epe import Layer, Layout, Line, Pillar, Orientation
+from sem_epe import vis
 
 t0 = time.perf_counter()
 
@@ -80,5 +80,4 @@ Average re-render V1: 0.089 ms
 Average re-render M2: 0.095 ms
 """
 
-plt.imshow(img_initial, cmap="gray", vmin=0, vmax=1)
-plt.show()
+vis.plot_fit(sem_image, result)

@@ -29,6 +29,7 @@ class FitResult:
 
     optimizer_result: scipy.optimize.OptimizeResult
     residual: np.ndarray
+    starting_render: np.ndarray
 
     @property
     def success(self) -> bool:
@@ -81,7 +82,8 @@ def fit(
             f"image shape {image.shape} does not match layout {layout.shape}"
         )
     layout.render()
+    starting_render = layout.image.copy()
     tuner = Tuner(layout, image.image, params)
     opt = tuner.fit(**solver_kwargs)
     residual = layout.image - image.image
-    return FitResult(optimizer_result=opt, residual=residual)
+    return FitResult(optimizer_result=opt, residual=residual, starting_render=starting_render)
