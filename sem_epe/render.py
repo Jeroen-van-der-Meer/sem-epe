@@ -35,7 +35,7 @@ class Feature(ABC):
     @abstractmethod
     def render_mask(self, roi: Tuple[int, int, int, int]) -> np.ndarray:
         """
-        Pixel footprint of this feature within *roi*.
+        Sub-pixel coverage fraction of this feature within *roi*.
 
         Parameters
         ----------
@@ -45,8 +45,10 @@ class Feature(ABC):
 
         Returns
         -------
-        np.ndarray, dtype=bool, shape=(r1-r0, c1-c0)
-            ``True`` at every pixel within *roi* covered by this feature.
+        np.ndarray, dtype=float32, shape=(r1-r0, c1-c0)
+            Coverage fraction in [0, 1] for each pixel within *roi*.
+            0 = fully outside, 1 = fully inside; values in between occur
+            at edge pixels.
         """
 
     @abstractmethod
@@ -100,43 +102,54 @@ class Line(Feature):
     def render_mask(self, roi: Tuple[int, int, int, int]) -> np.ndarray:
         r0, c0, r1, c1 = roi
         h, w = r1 - r0, c1 - c0
-        mask = np.zeros((h, w), dtype=bool)
         half = self.thickness / 2.0
+        rows = np.arange(r0, r1).reshape(-1, 1)  # (h, 1)
+        cols = np.arange(c0, c1).reshape(1, -1)  # (1, w)
 
         if self.orientation == Orientation.HORIZONTAL:
-            mr0 = max(0, int(np.floor(self.position - half)) - r0)
-            mr1 = min(h, int(np.ceil(self.position + half)) - r0)
+            row_cov = np.clip(
+                np.minimum(rows + 0.5, self.position + half) -
+                np.maximum(rows - 0.5, self.position - half),
+                0.0, 1.0,
+            )
             if self.extent is None:
-                mc0, mc1 = 0, w
+                col_cov = 1.0
             else:
-                mc0 = max(0, int(np.floor(self.extent[0])) - c0)
-                mc1 = min(w, int(np.ceil(self.extent[1])) - c0)
+                col_cov = np.clip(
+                    np.minimum(cols + 0.5, self.extent[1]) -
+                    np.maximum(cols - 0.5, self.extent[0]),
+                    0.0, 1.0,
+                )
         else:  # VERTICAL
-            mc0 = max(0, int(np.floor(self.position - half)) - c0)
-            mc1 = min(w, int(np.ceil(self.position + half)) - c0)
+            col_cov = np.clip(
+                np.minimum(cols + 0.5, self.position + half) -
+                np.maximum(cols - 0.5, self.position - half),
+                0.0, 1.0,
+            )
             if self.extent is None:
-                mr0, mr1 = 0, h
+                row_cov = 1.0
             else:
-                mr0 = max(0, int(np.floor(self.extent[0])) - r0)
-                mr1 = min(h, int(np.ceil(self.extent[1])) - r0)
+                row_cov = np.clip(
+                    np.minimum(rows + 0.5, self.extent[1]) -
+                    np.maximum(rows - 0.5, self.extent[0]),
+                    0.0, 1.0,
+                )
 
-        if mr0 < mr1 and mc0 < mc1:
-            mask[mr0:mr1, mc0:mc1] = True
-        return mask
+        return np.broadcast_to(row_cov * col_cov, (h, w)).astype(np.float32)
 
     def bounding_box(self, shape: Tuple[int, int]) -> Tuple[int, int, int, int]:
         h, w = shape
         half = self.thickness / 2.0
         if self.orientation == Orientation.HORIZONTAL:
             r0 = max(0, int(np.floor(self.position - half)))
-            r1 = min(h, int(np.ceil(self.position + half)))
+            r1 = min(h, int(np.ceil(self.position + half)) + 1)
             c0 = 0 if self.extent is None else max(0, int(np.floor(self.extent[0])))
-            c1 = w if self.extent is None else min(w, int(np.ceil(self.extent[1])))
+            c1 = w if self.extent is None else min(w, int(np.ceil(self.extent[1])) + 1)
         else:
             c0 = max(0, int(np.floor(self.position - half)))
-            c1 = min(w, int(np.ceil(self.position + half)))
+            c1 = min(w, int(np.ceil(self.position + half)) + 1)
             r0 = 0 if self.extent is None else max(0, int(np.floor(self.extent[0])))
-            r1 = h if self.extent is None else min(h, int(np.ceil(self.extent[1])))
+            r1 = h if self.extent is None else min(h, int(np.ceil(self.extent[1])) + 1)
         return r0, c0, r1, c1
 
     def __repr__(self) -> str:
@@ -180,15 +193,18 @@ class Pillar(Feature):
         h, w = r1 - r0, c1 - c0
         rows, cols = np.ogrid[:h, :w]
         radius = self.diameter / 2.0
-        return (cols - (self.x - c0)) ** 2 + (rows - (self.y - r0)) ** 2 <= radius ** 2
+        dist = np.sqrt((cols - (self.x - c0)) ** 2 + (rows - (self.y - r0)) ** 2)
+        # Linear ramp over a 1-pixel band: full inside, zero outside,
+        # interpolated within [radius - 0.5, radius + 0.5].
+        return np.clip(radius + 0.5 - dist, 0.0, 1.0).astype(np.float32)
 
     def bounding_box(self, shape: Tuple[int, int]) -> Tuple[int, int, int, int]:
         h, w = shape
         r = self.diameter / 2.0
-        r0 = max(0, int(np.floor(self.y - r)))
-        c0 = max(0, int(np.floor(self.x - r)))
-        r1 = min(h, int(np.floor(self.y + r)) + 1)
-        c1 = min(w, int(np.floor(self.x + r)) + 1)
+        r0 = max(0, int(np.floor(self.y - r)) - 1)
+        c0 = max(0, int(np.floor(self.x - r)) - 1)
+        r1 = min(h, int(np.ceil(self.y + r)) + 1)
+        c1 = min(w, int(np.ceil(self.x + r)) + 1)
         return r0, c0, r1, c1
 
     def __repr__(self) -> str:
@@ -228,11 +244,12 @@ class Layer:
         return self
 
     def render_mask(self, roi: Tuple[int, int, int, int]) -> np.ndarray:
-        """Union pixel mask of every feature in this layer within *roi*."""
+        """Float32 coverage mask (union of all features) within *roi*."""
         r0, c0, r1, c1 = roi
-        mask = np.zeros((r1 - r0, c1 - c0), dtype=bool)
+        mask = np.zeros((r1 - r0, c1 - c0), dtype=np.float32)
         for f in self.features:
-            mask |= f.render_mask(roi)
+            mask += f.render_mask(roi)
+            np.minimum(mask, 1.0, out=mask)
         return mask
 
     def __repr__(self) -> str:
@@ -315,7 +332,7 @@ class Layout:
         image = np.full(self.shape, self.background, dtype=np.float32)
 
         for layer in self.layers:
-            lm = np.zeros(self.shape, dtype=bool)
+            lm = np.zeros(self.shape, dtype=np.float32)
             bboxes = np.empty((len(layer.features), 4), dtype=np.int32)
             for i, f in enumerate(layer.features):
                 bbox = f.bounding_box(self.shape)
@@ -324,10 +341,13 @@ class Layout:
                 self._feature_masks[f] = fm
                 self._feature_index[f] = i
                 bboxes[i] = bbox
-                lm[r0:r1, c0:c1] |= fm
+                sub = lm[r0:r1, c0:c1]
+                sub += fm
+                np.minimum(sub, 1.0, out=sub)
             self._layer_bboxes[layer] = bboxes
             self._layer_masks[layer] = lm
-            image[lm] = layer.gray_value
+            # Alpha composite: image = (1 - lm) * image + lm * gray_value
+            image += lm * (layer.gray_value - image)
 
         self._image = image
         return self._image
@@ -364,48 +384,47 @@ class Layout:
         feat_idx = self._feature_index[feature]
         layer_bboxes = self._layer_bboxes[layer]
 
-        # Dirty region = union of old and new bounding boxes.
         old_r0, old_c0, old_r1, old_c1 = layer_bboxes[feat_idx]
         new_r0, new_c0, new_r1, new_c1 = feature.bounding_box(self.shape)
+        new_fm = feature.render_mask((new_r0, new_c0, new_r1, new_c1))
+
+        # Early exit: compact mask unchanged → image unchanged.
+        if (new_r0 == old_r0 and new_c0 == old_c0 and
+                new_r1 == old_r1 and new_c1 == old_c1 and
+                np.array_equal(self._feature_masks[feature], new_fm)):
+            return self._image
+
+        self._feature_masks[feature] = new_fm
+        layer_bboxes[feat_idx] = (new_r0, new_c0, new_r1, new_c1)
+
+        # Dirty region = union of old and new bounding boxes.
         dr0 = int(min(old_r0, new_r0))
         dc0 = int(min(old_c0, new_c0))
         dr1 = int(max(old_r1, new_r1))
         dc1 = int(max(old_c1, new_c1))
 
-        # Compact new feature mask; update the per-layer bbox array in-place.
-        self._feature_masks[feature] = feature.render_mask((new_r0, new_c0, new_r1, new_c1))
-        layer_bboxes[feat_idx] = (new_r0, new_c0, new_r1, new_c1)
-
-        # Snapshot old layer mask in dirty region.
-        old_lm_sub = self._layer_masks[layer][dr0:dr1, dc0:dc1].copy()
-
         # Vectorised overlap test.
         hit = ((layer_bboxes[:, 0] < dr1) & (layer_bboxes[:, 2] > dr0) &
                (layer_bboxes[:, 1] < dc1) & (layer_bboxes[:, 3] > dc0))
 
-        # Rebuild layer mask in dirty region by splatting only overlapping features.
+        # Rebuild layer coverage in dirty region by splatting overlapping features.
         lm_sub = self._layer_masks[layer][dr0:dr1, dc0:dc1]
-        lm_sub[:] = False
+        lm_sub[:] = 0.0
         for idx in np.where(hit)[0]:
             fr0, fc0, fr1, fc1 = layer_bboxes[idx]
             ir0, ic0 = max(fr0, dr0), max(fc0, dc0)
             ir1, ic1 = min(fr1, dr1), min(fc1, dc1)
-            lm_sub[ir0-dr0:ir1-dr0, ic0-dc0:ic1-dc0] |= (
-                self._feature_masks[layer.features[idx]][ir0-fr0:ir1-fr0, ic0-fc0:ic1-fc0]
-            )
+            dst = lm_sub[ir0-dr0:ir1-dr0, ic0-dc0:ic1-dc0]
+            src = self._feature_masks[layer.features[idx]][ir0-fr0:ir1-fr0, ic0-fc0:ic1-fc0]
+            dst += src
+            np.minimum(dst, 1.0, out=dst)
 
-        delta_sub = old_lm_sub ^ lm_sub
-
-        if not delta_sub.any():
-            return self._image
-
+        # Recomposite dirty region from scratch across all layers.
         sub_img = self._image[dr0:dr1, dc0:dc1]
-        sub_img[delta_sub] = self.background
+        sub_img[:] = self.background
         for lyr in self.layers:
-            sub_lm = self._layer_masks[lyr][dr0:dr1, dc0:dc1]
-            covered = delta_sub & sub_lm
-            if covered.any():
-                sub_img[covered] = lyr.gray_value
+            alpha = self._layer_masks[lyr][dr0:dr1, dc0:dc1]
+            sub_img += alpha * (lyr.gray_value - sub_img)
 
         return self._image
 
