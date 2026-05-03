@@ -1,5 +1,5 @@
 """
-Tests for the optimisation pipeline (ParameterSet + fit).
+Tests for the optimisation pipeline (Parameter + fit).
 
 Each test renders a reference image, builds a perturbed starting layout,
 runs fit(), and checks that the recovered parameters are close to the
@@ -37,10 +37,9 @@ def test_recover_line_cd():
     fit_layout = epe.Layout(100, 100, background=0.1)
     fit_layout.add_layer(layer_fit)
 
-    params = epe.ParameterSet.for_features([line_fit], ["thickness"], deviation=3.0)
-    result = epe.fit(_target(ref), fit_layout, params)
+    params = [epe.Parameter(line_fit, "thickness", -3.0, 3.0)]
+    epe.fit(_target(ref), fit_layout, params)
 
-    assert result.success
     assert abs(line_fit.thickness - 10.0) < 0.05
 
 
@@ -73,10 +72,9 @@ def test_recover_parallel_line_positions(orientation, attr):
     fit_layout = epe.Layout(100, 100, background=0)
     fit_layout.add_layer(layer_fit)
 
-    params = epe.ParameterSet.for_features(lines_fit, [attr], deviation=3.0)
-    result = epe.fit(_target(ref_layout), fit_layout, params)
+    params = [epe.Parameter(f, attr, -3.0, 3.0) for f in lines_fit]
+    epe.fit(_target(ref_layout), fit_layout, params)
 
-    assert result.success
     for f, p_true in zip(lines_fit, TRUE_POS):
         assert abs(getattr(f, attr) - p_true) < 0.05
 
@@ -128,16 +126,16 @@ def test_recover_multilayer_layout():
     fit_layout.add_layer(m1f)
     fit_layout.add_layer(m2f)
 
-    params = epe.ParameterSet([
-        (v1f, "thickness", -3, 3), (v1f, "position", -3, 3),
-        (v2f, "thickness", -3, 3), (v2f, "position", -3, 3),
-        (p1f, "x",         -3, 3), (p1f, "y",        -3, 3), (p1f, "diameter", -3, 3),
-        (h1f, "thickness", -3, 3), (h1f, "position",  -3, 3),
-    ])
-    result = epe.fit(_target(ref), fit_layout, params)
-
-    assert result.success
-    TOL = 0.1
+    params = [
+        epe.Parameter(v1f, "thickness", -3, 3), epe.Parameter(v1f, "position", -3, 3),
+        epe.Parameter(v2f, "thickness", -3, 3), epe.Parameter(v2f, "position", -3, 3),
+        epe.Parameter(p1f, "x",         -3, 3), epe.Parameter(p1f, "y",        -3, 3),
+        epe.Parameter(p1f, "diameter",  -3, 3),
+        epe.Parameter(h1f, "thickness", -3, 3), epe.Parameter(h1f, "position",  -3, 3),
+    ]
+    epe.fit(_target(ref), fit_layout, params)
+    
+    TOL = 0.01
     assert abs(v1f.thickness - 12.0) < TOL
     assert abs(v1f.position  - 35.0) < TOL
     assert abs(v2f.thickness - 12.0) < TOL
@@ -180,8 +178,7 @@ def test_recover_under_noise():
     fit_layout = epe.Layout(100, 100, background=0.1)
     fit_layout.add_layer(layer_fit)
 
-    params = epe.ParameterSet.for_features([line_fit], ["position"], deviation=3.0)
-    result = epe.fit(target, fit_layout, params)
+    params = [epe.Parameter(line_fit, "position", -3.0, 3.0)]
+    epe.fit(target, fit_layout, params)
 
-    assert result.success
     assert abs(line_fit.position - TRUE_POS) < 0.3

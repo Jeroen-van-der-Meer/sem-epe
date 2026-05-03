@@ -122,18 +122,15 @@ sem_image = epe.SEMImage(noisy, nm_per_pixel=1.0)
 
 # Collect tunable parameters.
 
-entries = []
-for f in fit_features_M1:
-    entries += [(f, "position",  -DEVIATION, DEVIATION),
-                (f, "thickness", -DEVIATION, DEVIATION)]
-for f in fit_features_V1:
-    entries += [(f, "x",         -DEVIATION, DEVIATION),
-                (f, "y",         -DEVIATION, DEVIATION),
-                (f, "diameter",  -DEVIATION, DEVIATION)]
-for f in fit_features_M2:
-    entries += [(f, "position",  -DEVIATION, DEVIATION),
-                (f, "thickness", -DEVIATION, DEVIATION)]
-params = epe.ParameterSet(entries)
+params = (
+    [epe.Parameter(f, "position",  -DEVIATION, DEVIATION) for f in fit_features_M1] +
+    [epe.Parameter(f, "thickness", -DEVIATION, DEVIATION) for f in fit_features_M1] +
+    [epe.Parameter(f, "x",         -DEVIATION, DEVIATION) for f in fit_features_V1] +
+    [epe.Parameter(f, "y",         -DEVIATION, DEVIATION) for f in fit_features_V1] +
+    [epe.Parameter(f, "diameter",  -DEVIATION, DEVIATION) for f in fit_features_V1] +
+    [epe.Parameter(f, "position",  -DEVIATION, DEVIATION) for f in fit_features_M2] +
+    [epe.Parameter(f, "thickness", -DEVIATION, DEVIATION) for f in fit_features_M2]
+)
 print(f"Number of tunable parameters: {len(params)}")
 
 # Snapshot nominal values before fitting
@@ -150,7 +147,7 @@ t0 = time.perf_counter()
 #profiler = cProfile.Profile()
 #profiler.enable()
 
-result = epe.fit_per_feature(
+result = epe.fit(
     sem_image,
     fit_layout,
     params
@@ -164,8 +161,11 @@ t1 = time.perf_counter()
 
 # Report on timing and errors.
 
+residual = fit_layout.image - sem_image.image
+rms = float(np.sqrt(np.mean(residual ** 2)))
+
 print(f"Fit: {(t1 - t0) * 1e3:.0f} ms")
-print(f"RMS: {result.rms_error:.5f}")
+print(f"RMS: {rms:.5f}")
 
 # Recovered deltas and residual errors after fitting.
 rec_pos_M1 = np.array([f.position  for f in fit_features_M1])

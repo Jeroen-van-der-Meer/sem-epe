@@ -14,30 +14,24 @@ from .image import (
     SEMImage,
 )
 from .tune import (
-    ParameterSet,
-    Tuner,
+    Parameter,
+    tune,
 )
 from .fit import (
     fit,
-    fit_global,
-    fit_per_layer,
-    fit_per_feature,
     FitResult,
 )
 
 __all__ = [
     "Feature",
     "fit",
-    "fit_global",
-    "fit_per_layer",
-    "fit_per_feature",
     "FitResult",
     "Orientation",
     "Layer",
     "Layout",
     "Line",
-    "ParameterSet",
+    "Parameter",
     "Pillar",
     "SEMImage",
-    "Tuner",
+    "tune",
 ]
