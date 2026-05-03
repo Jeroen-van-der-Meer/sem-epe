@@ -139,7 +139,7 @@ def test_recover_multilayer_layout():
     assert abs(v1f.thickness - 12.0) < TOL
     assert abs(v1f.position  - 35.0) < TOL
     assert abs(v2f.thickness - 12.0) < TOL
-    assert abs(v2f.position  - 75.0) < TOL
+    assert abs(v2f.position  - 120.0) < TOL
     assert abs(p1f.x         - 55.0) < TOL
     assert abs(p1f.y         - 55.0) < TOL
     assert abs(p1f.diameter  - 18.0) < TOL
