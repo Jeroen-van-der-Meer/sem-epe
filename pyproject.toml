@@ -7,7 +7,7 @@ name = "sem-epe"
 version = "0.1.0"
 description = "Layer-aware SEM image EPE (Edge Placement Error) analysis"
 readme = "README.md"
-requires-python = ">=3.6"
+requires-python = ">=3.9"
 dependencies = ["numpy", "scipy"]
 
 [project.optional-dependencies]
