@@ -141,6 +141,51 @@ def test_recover_multilayer_layout():
 
 
 # ---------------------------------------------------------------------------
+# Missing pillar: optimizer should converge to zero diameter
+# ---------------------------------------------------------------------------
+
+def test_missing_pillar_converges_to_zero():
+    """
+    When a pillar is absent in the target, the optimizer should drive its
+    fitted diameter to ≤ 0 while recovering the present pillars accurately.
+    """
+    SPACING  = 24
+    DIAMETER = 12.0
+    GRID     = 3
+    SIZE     = GRID * SPACING
+
+    layer_ref = epe.Layer("l", gray_value=0.8, z_order=1)
+    layer_fit = epe.Layer("l", gray_value=0.8, z_order=1)
+    fit_pillars = []
+
+    for i in range(GRID):
+        for j in range(GRID):
+            x = (j + 0.5) * SPACING
+            y = (i + 0.5) * SPACING
+            missing = (i == 1 and j == 1)  # centre pillar absent from target
+            if not missing:
+                layer_ref.add_feature(epe.Pillar(x=x, y=y, diameter=DIAMETER))
+            fit_f = epe.Pillar(x=x, y=y, diameter=DIAMETER)
+            layer_fit.add_feature(fit_f)
+            fit_pillars.append((fit_f, missing))
+
+    ref = epe.Layout(SIZE, SIZE, background=0.1)
+    ref.add_layer(layer_ref)
+    fit_layout = epe.Layout(SIZE, SIZE, background=0.1)
+    fit_layout.add_layer(layer_fit)
+
+    params = [epe.Parameter(f, "diameter") for f, _ in fit_pillars]
+    epe.fit(_target(ref), fit_layout, params)
+
+    for pillar, missing in fit_pillars:
+        if missing:
+            print(pillar.diameter)
+            assert pillar.diameter < 0.5, f"missing pillar: expected diameter ≤ 0.5, got {pillar.diameter:.3f}"
+        else:
+            assert abs(pillar.diameter - DIAMETER) < 0.1, f"present pillar: expected diameter {DIAMETER}, got {pillar.diameter:.3f}"
+
+
+# ---------------------------------------------------------------------------
 # Recovery under Gaussian noise
 # ---------------------------------------------------------------------------
 

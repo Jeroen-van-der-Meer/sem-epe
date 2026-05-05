@@ -196,3 +196,45 @@ def test_rerender_lower_layer_obscured_by_upper():
     layout = Layout(40, 40, background=0.0)
     layout.add_layer(bot).add_layer(top)
     assert_rerender_matches_render(layout, f, x=25, y=25)
+
+
+# ---------------------------------------------------------------------------
+# Zero-width / zero-diameter edge cases
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("thickness", [0.0, -1.0, -10.0])
+@pytest.mark.parametrize("orientation", [Orientation.HORIZONTAL, Orientation.VERTICAL],
+                         ids=["horizontal", "vertical"])
+def test_nonpositive_thickness_line_renders_empty(orientation, thickness):
+    """A line with thickness ≤ 0 must produce an all-zero mask without crashing."""
+    f = Line(orientation, thickness=thickness, position=10.0)
+    mask = f.render_mask((0, 0, 20, 20))
+    assert mask.shape == (20, 20)
+    assert mask.max() == 0.0
+
+
+@pytest.mark.parametrize("diameter", [0.0, -1.0, -10.0])
+def test_nonpositive_diameter_pillar_renders_empty(diameter):
+    """A pillar with diameter ≤ 0 must produce an all-zero mask without crashing."""
+    f = Pillar(x=10.0, y=10.0, diameter=diameter)
+    mask = f.render_mask((0, 0, 20, 20))
+    assert mask.shape == (20, 20)
+    assert mask.max() == 0.0
+
+
+@pytest.mark.parametrize("thickness", [0.0, -1.0, -10.0])
+@pytest.mark.parametrize("orientation", [Orientation.HORIZONTAL, Orientation.VERTICAL],
+                         ids=["horizontal", "vertical"])
+def test_nonpositive_thickness_line_layout_is_background(orientation, thickness):
+    """A layout with only a thickness ≤ 0 line must render to pure background."""
+    f = Line(orientation, thickness=thickness, position=10.0)
+    img = single_layer_layout(f, size=20, gray=0.7, background=0.1).render()
+    np.testing.assert_array_equal(img, 0.1)
+
+
+@pytest.mark.parametrize("diameter", [0.0, -1.0, -10.0])
+def test_nonpositive_diameter_pillar_layout_is_background(diameter):
+    """A layout with only a diameter ≤ 0 pillar must render to pure background."""
+    f = Pillar(x=10.0, y=10.0, diameter=diameter)
+    img = single_layer_layout(f, size=20, gray=0.7, background=0.1).render()
+    np.testing.assert_array_equal(img, 0.1)

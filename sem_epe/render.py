@@ -139,7 +139,7 @@ class Line(Feature):
 
     def bounding_box(self, shape: Tuple[int, int]) -> Tuple[int, int, int, int]:
         h, w = shape
-        half = self.thickness / 2.0
+        half = max(self.thickness, 0.0) / 2.0
         if self.orientation == Orientation.HORIZONTAL:
             r0 = max(0, int(np.floor(self.position - half)))
             r1 = min(h, int(np.ceil(self.position + half)) + 1)
@@ -191,6 +191,8 @@ class Pillar(Feature):
     def render_mask(self, roi: Tuple[int, int, int, int]) -> np.ndarray:
         r0, c0, r1, c1 = roi
         h, w = r1 - r0, c1 - c0
+        if self.diameter <= 0:
+            return np.zeros((h, w))
         rows, cols = np.ogrid[:h, :w]
         radius = self.diameter / 2.0
         dist = np.sqrt((cols - (self.x - c0)) ** 2 + (rows - (self.y - r0)) ** 2)
@@ -200,7 +202,7 @@ class Pillar(Feature):
 
     def bounding_box(self, shape: Tuple[int, int]) -> Tuple[int, int, int, int]:
         h, w = shape
-        r = self.diameter / 2.0
+        r = max(self.diameter, 0.0) / 2.0
         r0 = max(0, int(np.floor(self.y - r)) - 1)
         c0 = max(0, int(np.floor(self.x - r)) - 1)
         r1 = min(h, int(np.ceil(self.y + r)) + 1)
