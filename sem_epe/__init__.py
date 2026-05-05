@@ -21,8 +21,14 @@ from .fit import (
     fit,
     FitResult,
 )
+from .align import (
+    align,
+    AlignResult,
+)
 
 __all__ = [
+    "align",
+    "AlignResult",
     "Feature",
     "fit",
     "FitResult",

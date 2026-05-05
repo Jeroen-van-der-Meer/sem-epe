@@ -1,12 +1,3 @@
-"""
-Tests for the optimisation pipeline (Parameter + fit).
-
-Each test renders a reference image, builds a perturbed starting layout,
-runs fit(), and checks that the recovered parameters are close to the
-ground truth.  All tests require sub-pixel rendering to be active
-(non-zero gradients); they would fail with binary rendering.
-"""
-
 import numpy as np
 import pytest
 

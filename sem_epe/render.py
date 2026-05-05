@@ -231,9 +231,9 @@ class Layer:
         Stacking position.  Higher = rendered on top.
     """
 
-    def __init__(self, name: str, gray_value: float, z_order: int) -> None:
+    def __init__(self, name: str, gray_value: Optional[float] = None, z_order: int = 0) -> None:
         self.name: str = name
-        self.gray_value: float = float(gray_value)
+        self.gray_value: Optional[float] = None if gray_value is None else float(gray_value)
         self.z_order: int = int(z_order)
         self.features: List[Feature] = []
 
@@ -253,8 +253,9 @@ class Layer:
         return mask
 
     def __repr__(self) -> str:
+        gray = f"{self.gray_value:.3f}" if self.gray_value is not None else "?"
         return (
-            f"Layer(name={self.name!r}, gray={self.gray_value:.3f}, "
+            f"Layer(name={self.name!r}, gray={gray}, "
             f"z={self.z_order}, n_features={len(self.features)})"
         )
 
@@ -332,6 +333,11 @@ class Layout:
         image = np.full(self.shape, self.background, dtype=np.float32)
 
         for layer in self.layers:
+            if layer.gray_value is None:
+                raise ValueError(
+                    f"Layer {layer.name!r} has no gray_value set. "
+                    f"Call epe.align() to discover it, or set layer.gray_value manually."
+                )
             lm = np.zeros(self.shape, dtype=np.float32)
             bboxes = np.empty((len(layer.features), 4), dtype=np.int32)
             for i, f in enumerate(layer.features):
@@ -423,10 +429,68 @@ class Layout:
         sub_img = self._image[dr0:dr1, dc0:dc1]
         sub_img[:] = self.background
         for lyr in self.layers:
+            if lyr.gray_value is None:
+                raise ValueError(
+                    f"Layer {lyr.name!r} has no gray_value set. "
+                    f"Call epe.align() to discover it, or set layer.gray_value manually."
+                )
             alpha = self._layer_masks[lyr][dr0:dr1, dc0:dc1]
             sub_img += alpha * (lyr.gray_value - sub_img)
 
         return self._image
+
+    def region_mask(
+        self, threshold: float = 0.9
+    ) -> Tuple[np.ndarray, List[Optional["Layer"]]]:
+        """
+        Assign each pixel to a layout region using geometry alone.
+
+        Layers are processed from top (highest z_order) to bottom.  A pixel
+        is assigned to layer k if that layer's coverage exceeds *threshold*
+        and no layer above it has coverage exceeding ``1 - threshold``.
+        Pixels not cleanly inside any single layer keep the sentinel value
+        -1 and are excluded from region-based computations (e.g. alignment).
+        Pixels covered by no layer to any significant degree are assigned to
+        the background region (index 0).
+
+        This method uses only :meth:`Layer.render_mask` and is therefore
+        independent of :attr:`Layer.gray_value`; it can be called before
+        gray values are known.
+
+        Parameters
+        ----------
+        threshold : float, optional
+            Coverage fraction above which a pixel is considered "inside" a
+            layer.  Default: 0.9.
+
+        Returns
+        -------
+        region : np.ndarray, shape (H, W), dtype int32
+            Per-pixel region index.  -1 = edge/excluded, 0 = background,
+            1 … n = layers in descending z_order (topmost first).
+        region_owners : list of Optional[Layer], length n+1
+            ``region_owners[0]`` is ``None`` (background).
+            ``region_owners[k]`` for k ≥ 1 is the :class:`Layer` whose
+            interior pixels carry region index k.
+        """
+        H, W = self.shape
+        full_roi = (0, 0, H, W)
+        sorted_layers = sorted(self.layers, key=lambda l: l.z_order, reverse=True)
+
+        region = np.full((H, W), -1, dtype=np.int32)
+        higher_coverage = np.zeros((H, W), dtype=np.float32)
+        region_owners: List[Optional[Layer]] = [None]  # index 0 = background
+
+        for layer in sorted_layers:
+            layer_mask = layer.render_mask(full_roi)
+            region_idx = len(region_owners)
+            is_pure = (layer_mask > threshold) & (higher_coverage < (1.0 - threshold))
+            region[is_pure] = region_idx
+            region_owners.append(layer)
+            np.maximum(higher_coverage, layer_mask, out=higher_coverage)
+
+        region[higher_coverage < (1.0 - threshold)] = 0
+        return region, region_owners
 
     @property
     def image(self) -> Optional[np.ndarray]:
