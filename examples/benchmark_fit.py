@@ -244,7 +244,7 @@ ax_cd.legend(fontsize=8)
 fig.tight_layout()
 plt.show()
 
-vis.plot_fit(sem_image, result)
+vis.plot_overlay(sem_image, fit_layout)
 
 """
 512x512; single per-feature tuning pass:
