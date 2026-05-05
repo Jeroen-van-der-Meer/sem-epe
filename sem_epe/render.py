@@ -214,6 +214,102 @@ class Pillar(Feature):
 
 
 # ---------------------------------------------------------------------------
+# Segment
+# ---------------------------------------------------------------------------
+
+class Segment(Feature):
+    """
+    A finite-length line segment (trace) with optional rounded ends.
+
+    Parameters
+    ----------
+    orientation : Orientation
+        HORIZONTAL (segment runs left-right) or VERTICAL (runs top-bottom).
+    length : float
+        Extent along the parallel axis in pixels.
+    thickness : float
+        Critical dimension (CD): full width along the perpendicular axis.
+    x : float
+        Column coordinate of the segment centre in pixels.
+    y : float
+        Row coordinate of the segment centre in pixels.
+    roundedness : float
+        Corner-rounding radius in pixels.  0 = sharp rectangle.
+        Clamped to ``min(length, thickness) / 2`` internally so corners
+        never exceed the shape boundary.  At ``min(length, thickness) / 2``
+        the short ends become semicircular (stadium shape).
+    """
+
+    def __init__(
+        self,
+        orientation: Orientation,
+        length: float,
+        thickness: float,
+        x: float,
+        y: float,
+        roundedness: float = 0.0,
+    ) -> None:
+        super().__init__()
+        self.orientation: Orientation = orientation
+        self.length: float = float(length)
+        self.thickness: float = float(thickness)
+        self.x: float = float(x)
+        self.y: float = float(y)
+        self.roundedness: float = float(roundedness)
+
+    def render_mask(self, roi: Tuple[int, int, int, int]) -> np.ndarray:
+        r0, c0, r1, c1 = roi
+        h, w = r1 - r0, c1 - c0
+        if self.length <= 0 or self.thickness <= 0:
+            return np.zeros((h, w))
+
+        hl = self.length / 2.0
+        ht = self.thickness / 2.0
+        # Clamp roundedness so the core rectangle never inverts.
+        corner_r = max(0.0, min(self.roundedness, min(hl, ht)))
+
+        rows = np.arange(r0, r1).reshape(-1, 1)  # (h, 1)
+        cols = np.arange(c0, c1).reshape(1, -1)  # (1, w)
+
+        if self.orientation == Orientation.HORIZONTAL:
+            along = cols - self.x  # (1, w) — length axis
+            perp  = rows - self.y  # (h, 1) — thickness axis
+        else:  # VERTICAL
+            along = rows - self.y  # (h, 1) — length axis
+            perp  = cols - self.x  # (1, w) — thickness axis
+
+        # Distance from each pixel centre to the boundary of the rounded rectangle.
+        # The "core" rectangle has half-extents (hl - corner_r, ht - corner_r).
+        # Points inside the core give dist = 0; outside, dist > 0.
+        qa   = np.maximum(np.abs(along) - (hl - corner_r), 0.0)
+        qp   = np.maximum(np.abs(perp)  - (ht - corner_r), 0.0)
+        dist = np.sqrt(qa ** 2 + qp ** 2)
+
+        # 1-pixel antialiasing band identical to the Pillar convention.
+        return np.clip(corner_r + 0.5 - dist, 0.0, 1.0)
+
+    def bounding_box(self, shape: Tuple[int, int]) -> Tuple[int, int, int, int]:
+        h, w = shape
+        hl = max(self.length,    0.0) / 2.0
+        ht = max(self.thickness, 0.0) / 2.0
+        if self.orientation == Orientation.HORIZONTAL:
+            row_half, col_half = ht, hl
+        else:
+            row_half, col_half = hl, ht
+        r0 = max(0, int(np.floor(self.y - row_half)) - 1)
+        c0 = max(0, int(np.floor(self.x - col_half)) - 1)
+        r1 = min(h, int(np.ceil(self.y + row_half)) + 1)
+        c1 = min(w, int(np.ceil(self.x + col_half)) + 1)
+        return r0, c0, r1, c1
+
+    def __repr__(self) -> str:
+        return (
+            f"Segment({self.orientation.value}, x={self.x:.2f}, y={self.y:.2f}, "
+            f"l={self.length:.2f}, cd={self.thickness:.2f}, r={self.roundedness:.2f})"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Layer
 # ---------------------------------------------------------------------------
 

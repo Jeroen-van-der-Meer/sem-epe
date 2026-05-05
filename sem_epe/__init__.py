@@ -9,6 +9,7 @@ from .render import (
     Layout,
     Line,
     Pillar,
+    Segment,
 )
 from .image import (
     SEMImage,
@@ -40,6 +41,7 @@ __all__ = [
     "Line",
     "Parameter",
     "Pillar",
+    "Segment",
     "SEMImage",
     "tune",
 ]
