@@ -35,6 +35,7 @@ def fit(
     image: SEMImage,
     layout: Layout,
     params: List[Parameter],
+    regularization: float = 0.0,
     **solver_kwargs,
 ) -> FitResult:
     """
@@ -46,6 +47,8 @@ def fit(
     image : SEMImage
     layout : Layout
     params : list of Parameter
+    regularization : float, optional
+        Passed to :func:`tune`.
     **solver_kwargs
         Forwarded to ``scipy.optimize.minimize`` via ``options``
         (e.g. ``xtol``, ``ftol``, ``maxfev``).
@@ -70,6 +73,7 @@ def fit(
     for layer in sorted_layers:
         layer_results = tune(
             layout, image.image, by_layer[id(layer)],
+            regularization=regularization,
             **solver_kwargs,
         )
         all_feature_results.extend(layer_results)

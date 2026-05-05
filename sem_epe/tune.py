@@ -45,6 +45,7 @@ def tune(
     layout: Layout,
     target: np.ndarray,
     params: List[Parameter],
+    regularization: float = 0.0,
     **kwargs,
 ) -> List[FeatureResult]:
     """
@@ -63,6 +64,10 @@ def tune(
     params : list of Parameter
         Free parameters.  Multiple parameters per feature are supported and
         are optimised jointly for that feature.
+    regularization : float, optional
+        L2 regularization weight (λ).  Adds ``λ · sum((x − x₀)²)`` to the
+        objective, where *x₀* are the nominal parameter values at the start
+        of each feature's optimisation.
     **kwargs
         Forwarded to ``scipy.optimize.minimize`` via ``options``
         (e.g. ``xtol``, ``ftol``, ``maxfev``).
@@ -102,8 +107,11 @@ def tune(
             layout.rerender_feature(_f)
             return (layout.image[_r0:_r1, _c0:_c1] - _tp).ravel()
 
-        def objective(x):
-            return np.sum(np.abs(residuals(x)))
+        def objective(x, _x0=x0):
+            data_cost = np.sum(np.abs(residuals(x)))
+            if regularization:
+                return data_cost + regularization * np.sum((x - _x0) ** 2)
+            return data_cost
 
         result = scipy.optimize.minimize(
             objective,
@@ -116,12 +124,13 @@ def tune(
             setattr(p.feature, p.attribute, v)
         layout.rerender_feature(feature)
 
+        data_cost = np.sum(np.abs(residuals(result.x)))
         results.append(FeatureResult(
             feature=feature,
             params=feature_params,
             success=result.success,
             n_evaluations=result.nfev,
-            final_cost=result.fun,
+            final_cost=data_cost,
         ))
 
     return results
