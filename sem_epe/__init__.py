@@ -14,6 +14,7 @@ from .image import (
     SEMImage,
 )
 from .tune import (
+    FeatureResult,
     Parameter,
     tune,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "align",
     "AlignResult",
     "Feature",
+    "FeatureResult",
     "fit",
     "FitResult",
     "Orientation",

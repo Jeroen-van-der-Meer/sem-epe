@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 import scipy.optimize
@@ -15,8 +14,31 @@ class Parameter:
     """A single free parameter for fitting: one attribute on one feature."""
     feature: Feature
     attribute: str
-    lo: float = -math.inf
-    hi: float = math.inf
+
+
+@dataclass
+class FeatureResult:
+    """
+    Optimisation outcome for a single feature.
+
+    Attributes
+    ----------
+    feature : Feature
+        The feature that was optimised.
+    params : list of Parameter
+        The parameters that were adjusted.
+    success : bool
+        Whether the optimiser reported convergence.
+    n_evaluations : int
+        Total number of objective function evaluations.
+    final_cost : float
+        L1 cost (sum of absolute residuals) at convergence.
+    """
+    feature: Feature
+    params: List[Parameter]
+    success: bool
+    n_evaluations: int
+    final_cost: float
 
 
 def tune(
@@ -24,7 +46,7 @@ def tune(
     target: np.ndarray,
     params: List[Parameter],
     **kwargs,
-) -> None:
+) -> List[FeatureResult]:
     """
     Fit feature attributes to minimise residuals against *target*, in-place.
 
@@ -42,7 +64,13 @@ def tune(
         Free parameters.  Multiple parameters per feature are supported and
         are optimised jointly for that feature.
     **kwargs
-        Forwarded to ``scipy.optimize.least_squares`` (e.g. ``ftol``, ``max_nfev``).
+        Forwarded to ``scipy.optimize.minimize`` via ``options``
+        (e.g. ``xtol``, ``ftol``, ``maxfev``).
+
+    Returns
+    -------
+    list of FeatureResult
+        One entry per optimised feature, in first-appearance order.
     """
     by_feature: Dict[int, List[Parameter]] = {}
     for p in params:
@@ -52,6 +80,7 @@ def tune(
         by_feature[fid].append(p)
 
     H, W = layout.shape
+    results: List[FeatureResult] = []
 
     for feature_params in by_feature.values():
         feature = feature_params[0].feature
@@ -66,24 +95,33 @@ def tune(
 
         nominals = [getattr(p.feature, p.attribute) for p in feature_params]
         x0 = np.array(nominals)
-        lo_bounds = np.array([n + p.lo for n, p in zip(nominals, feature_params)])
-        hi_bounds = np.array([n + p.hi for n, p in zip(nominals, feature_params)])
 
         def residuals(x, _fp=feature_params, _f=feature, _r0=r0, _c0=c0, _r1=r1, _c1=c1, _tp=target_patch):
             for p, v in zip(_fp, x):
-                setattr(p.feature, p.attribute, float(v))
+                setattr(p.feature, p.attribute, v)
             layout.rerender_feature(_f)
             return (layout.image[_r0:_r1, _c0:_c1] - _tp).ravel()
 
-        result = scipy.optimize.least_squares(
-            residuals,
+        def objective(x):
+            return np.sum(np.abs(residuals(x)))
+
+        result = scipy.optimize.minimize(
+            objective,
             x0=x0,
-            bounds=(lo_bounds, hi_bounds),
-            method="trf",
-            jac="3-point",
-            **kwargs,
+            method='Powell',
+            options=kwargs or None,
         )
 
         for p, v in zip(feature_params, result.x):
-            setattr(p.feature, p.attribute, float(v))
+            setattr(p.feature, p.attribute, v)
         layout.rerender_feature(feature)
+
+        results.append(FeatureResult(
+            feature=feature,
+            params=feature_params,
+            success=result.success,
+            n_evaluations=result.nfev,
+            final_cost=result.fun,
+        ))
+
+    return results

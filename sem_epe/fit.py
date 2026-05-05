@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 
 import numpy as np
 
 from .image import SEMImage
 from .render import Layout
-from .tune import Parameter, tune
+from .tune import FeatureResult, Parameter, tune
 
 
 @dataclass
@@ -22,9 +22,13 @@ class FitResult:
         Layout render at the nominal starting point, before any fitting.
     final_render : np.ndarray, shape=(H, W)
         Layout render after fitting.
+    feature_results : list of FeatureResult
+        Per-feature optimisation outcomes, in the order features were
+        processed (top layer first, then descending z_order).
     """
     starting_render: np.ndarray
     final_render: np.ndarray
+    feature_results: List[FeatureResult] = field(default_factory=list)
 
 
 def fit(
@@ -43,20 +47,14 @@ def fit(
     layout : Layout
     params : list of Parameter
     **solver_kwargs
-        Forwarded to ``scipy.optimize.least_squares`` (e.g. ``ftol``, ``max_nfev``).
-
-    Returns
-    -------
-    starting_render : np.ndarray
-        A copy of ``layout.image`` at the nominal starting point, before any
-        optimisation.  Useful for visualising how much the fit moved.
+        Forwarded to ``scipy.optimize.minimize`` via ``options``
+        (e.g. ``xtol``, ``ftol``, ``maxfev``).
     """
     if image.shape != layout.shape:
         raise ValueError(
             f"image shape {image.shape} does not match layout shape {layout.shape}"
         )
 
-    # FIXME: May move to `tune.py`.
     by_layer: defaultdict = defaultdict(list)
     layer_map = {}
     for p in params:
@@ -68,7 +66,12 @@ def fit(
 
     layout.render()
     starting_render = layout.image.copy()
+    all_feature_results: List[FeatureResult] = []
     for layer in sorted_layers:
-        tune(layout, image.image, by_layer[id(layer)], **solver_kwargs)
+        layer_results = tune(
+            layout, image.image, by_layer[id(layer)],
+            **solver_kwargs,
+        )
+        all_feature_results.extend(layer_results)
         final_render = layout.render()
-    return FitResult(starting_render, final_render)
+    return FitResult(starting_render, final_render, all_feature_results)

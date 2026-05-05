@@ -96,7 +96,7 @@ def test_bbox_clipped_at_image_boundary():
 
 def test_render_shape_and_dtype():
     img = Layout(20, 30, background=0.0).render()
-    assert img.shape == (20, 30) and img.dtype == np.float32
+    assert img.shape == (20, 30) and img.dtype == float
 
 
 def test_render_empty_layout_is_background():

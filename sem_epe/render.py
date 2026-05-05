@@ -45,7 +45,7 @@ class Feature(ABC):
 
         Returns
         -------
-        np.ndarray, dtype=float32, shape=(r1-r0, c1-c0)
+        np.ndarray, shape=(r1-r0, c1-c0)
             Coverage fraction in [0, 1] for each pixel within *roi*.
             0 = fully outside, 1 = fully inside; values in between occur
             at edge pixels.
@@ -135,7 +135,7 @@ class Line(Feature):
                     0.0, 1.0,
                 )
 
-        return np.broadcast_to(row_cov * col_cov, (h, w)).astype(np.float32)
+        return np.broadcast_to(row_cov * col_cov, (h, w)).copy()
 
     def bounding_box(self, shape: Tuple[int, int]) -> Tuple[int, int, int, int]:
         h, w = shape
@@ -196,7 +196,7 @@ class Pillar(Feature):
         dist = np.sqrt((cols - (self.x - c0)) ** 2 + (rows - (self.y - r0)) ** 2)
         # Linear ramp over a 1-pixel band: full inside, zero outside,
         # interpolated within [radius - 0.5, radius + 0.5].
-        return np.clip(radius + 0.5 - dist, 0.0, 1.0).astype(np.float32)
+        return np.clip(radius + 0.5 - dist, 0.0, 1.0)
 
     def bounding_box(self, shape: Tuple[int, int]) -> Tuple[int, int, int, int]:
         h, w = shape
@@ -244,9 +244,9 @@ class Layer:
         return self
 
     def render_mask(self, roi: Tuple[int, int, int, int]) -> np.ndarray:
-        """Float32 coverage mask (union of all features) within *roi*."""
+        """Coverage mask (union of all features) within *roi*."""
         r0, c0, r1, c1 = roi
-        mask = np.zeros((r1 - r0, c1 - c0), dtype=np.float32)
+        mask = np.zeros((r1 - r0, c1 - c0))
         for f in self.features:
             mask += f.render_mask(roi)
             np.minimum(mask, 1.0, out=mask)
@@ -327,10 +327,10 @@ class Layout:
 
         Returns
         -------
-        np.ndarray, dtype=float32, shape=(H, W)
+        np.ndarray, shape=(H, W)
             The internal image buffer.
         """
-        image = np.full(self.shape, self.background, dtype=np.float32)
+        image = np.full(self.shape, self.background)
 
         for layer in self.layers:
             if layer.gray_value is None:
@@ -338,8 +338,8 @@ class Layout:
                     f"Layer {layer.name!r} has no gray_value set. "
                     f"Call epe.align() to discover it, or set layer.gray_value manually."
                 )
-            lm = np.zeros(self.shape, dtype=np.float32)
-            bboxes = np.empty((len(layer.features), 4), dtype=np.int32)
+            lm = np.zeros(self.shape)
+            bboxes = np.empty((len(layer.features), 4), dtype=int)
             for i, f in enumerate(layer.features):
                 bbox = f.bounding_box(self.shape)
                 r0, c0, r1, c1 = bbox
@@ -383,7 +383,7 @@ class Layout:
 
         Returns
         -------
-        np.ndarray, dtype=float32, shape=(H, W)
+        np.ndarray, shape=(H, W)
             The internal image buffer, updated in place.
         """
         layer = feature.layer
@@ -465,7 +465,7 @@ class Layout:
 
         Returns
         -------
-        region : np.ndarray, shape (H, W), dtype int32
+        region : np.ndarray, shape (H, W), dtype int
             Per-pixel region index.  -1 = edge/excluded, 0 = background,
             1 … n = layers in descending z_order (topmost first).
         region_owners : list of Optional[Layer], length n+1
@@ -477,8 +477,8 @@ class Layout:
         full_roi = (0, 0, H, W)
         sorted_layers = sorted(self.layers, key=lambda l: l.z_order, reverse=True)
 
-        region = np.full((H, W), -1, dtype=np.int32)
-        higher_coverage = np.zeros((H, W), dtype=np.float32)
+        region = np.full((H, W), -1, dtype=int)
+        higher_coverage = np.zeros((H, W))
         region_owners: List[Optional[Layer]] = [None]  # index 0 = background
 
         for layer in sorted_layers:

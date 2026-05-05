@@ -260,7 +260,7 @@ def align(
     for owner, rel_idx in zip(region_owners, region_rel_indices):
         if len(rel_idx) == 0:
             continue
-        gray = float(np.mean(corrected_flat[included_pixels[rel_idx]]))
+        gray = np.mean(corrected_flat[included_pixels[rel_idx]])
         if owner is None:
             layout.background = gray
         else:
@@ -269,5 +269,5 @@ def align(
     return AlignResult(
         coefficients=opt_coeffs,
         corrected=corrected,
-        cost=float(opt.cost),
+        cost=opt.cost,
     )
