@@ -238,3 +238,49 @@ def test_nonpositive_diameter_pillar_layout_is_background(diameter):
     f = Pillar(x=10.0, y=10.0, diameter=diameter)
     img = single_layer_layout(f, size=20, gray=0.7, background=0.1).render()
     np.testing.assert_array_equal(img, 0.1)
+
+
+# ---------------------------------------------------------------------------
+# Layer transparency
+# ---------------------------------------------------------------------------
+
+def _two_layer_layout(*, bot_gray, top_gray, top_transparency, size=20):
+    """Background=0, bottom layer full coverage, top layer full coverage."""
+    bot = Layer("bot", gray_value=bot_gray, z_order=1)
+    bot.add_feature(Line(Orientation.HORIZONTAL, thickness=size, position=size / 2))
+    top = Layer("top", gray_value=top_gray, z_order=2, transparency=top_transparency)
+    top.add_feature(Line(Orientation.HORIZONTAL, thickness=size, position=size / 2))
+    layout = Layout(size, size, background=0.0)
+    layout.add_layer(bot)
+    layout.add_layer(top)
+    return layout
+
+
+def test_fully_opaque_layer_covers_below():
+    """transparency=0 (default): top layer completely replaces bottom."""
+    img = _two_layer_layout(bot_gray=0.2, top_gray=0.8, top_transparency=0.0).render()
+    assert img[10, 10] == pytest.approx(0.8)
+
+
+def test_fully_transparent_layer_has_no_effect():
+    """transparency=1: top layer is invisible; bottom shows through everywhere."""
+    img = _two_layer_layout(bot_gray=0.2, top_gray=0.8, top_transparency=1.0).render()
+    assert img[10, 10] == pytest.approx(0.2)
+
+
+def test_half_transparent_layer_blends():
+    """transparency=0.5: pixel value should be halfway between bottom and top gray."""
+    bot_gray, top_gray = 0.2, 0.8
+    img = _two_layer_layout(bot_gray=bot_gray, top_gray=top_gray, top_transparency=0.5).render()
+    # image = bot_gray + lm * 0.5 * (top_gray - bot_gray) = 0.2 + 0.5 * 0.6 = 0.5
+    assert img[10, 10] == pytest.approx(bot_gray + 0.5 * (top_gray - bot_gray))
+
+
+def test_transparency_rerender_matches_render():
+    """rerender_feature must give the same result as a fresh render for transparent layers."""
+    f = Pillar(x=10, y=10, diameter=6)
+    layer = Layer("l", gray_value=0.9, z_order=1, transparency=0.4)
+    layer.add_feature(f)
+    layout = Layout(20, 20, background=0.1)
+    layout.add_layer(layer)
+    assert_rerender_matches_render(layout, f, x=14, y=14)

@@ -327,12 +327,21 @@ class Layer:
         Normalised intensity in [0, 1].
     z_order : int
         Stacking position.  Higher = rendered on top.
+    transparency : float
+        Opacity complement in [0, 1].
     """
 
-    def __init__(self, name: str, gray_value: Optional[float] = None, z_order: int = 0) -> None:
+    def __init__(
+        self,
+        name: str,
+        gray_value: Optional[float] = None,
+        z_order: int = 0,
+        transparency: float = 0.0,
+    ) -> None:
         self.name: str = name
         self.gray_value: Optional[float] = None if gray_value is None else float(gray_value)
         self.z_order: int = int(z_order)
+        self.transparency: float = float(transparency)
         self.features: List[Feature] = []
 
     def add_feature(self, feature: Feature) -> "Layer":
@@ -352,9 +361,10 @@ class Layer:
 
     def __repr__(self) -> str:
         gray = f"{self.gray_value:.3f}" if self.gray_value is not None else "?"
+        t = f", t={self.transparency:.2f}" if self.transparency else ""
         return (
             f"Layer(name={self.name!r}, gray={gray}, "
-            f"z={self.z_order}, n_features={len(self.features)})"
+            f"z={self.z_order}{t}, n_features={len(self.features)})"
         )
 
 
@@ -450,8 +460,8 @@ class Layout:
                 np.minimum(sub, 1.0, out=sub)
             self._layer_bboxes[layer] = bboxes
             self._layer_masks[layer] = lm
-            # Alpha composite: image = (1 - lm) * image + lm * gray_value
-            image += lm * (layer.gray_value - image)
+            # Alpha composite scaled by opacity: fully opaque replaces, transparent skips.
+            image += lm * (1.0 - layer.transparency) * (layer.gray_value - image)
 
         self._image = image
         return self._image
@@ -533,7 +543,7 @@ class Layout:
                     f"Call epe.align() to discover it, or set layer.gray_value manually."
                 )
             alpha = self._layer_masks[lyr][dr0:dr1, dc0:dc1]
-            sub_img += alpha * (lyr.gray_value - sub_img)
+            sub_img += alpha * (1.0 - lyr.transparency) * (lyr.gray_value - sub_img)
 
         return self._image
 
