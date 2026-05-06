@@ -284,3 +284,55 @@ def test_transparency_rerender_matches_render():
     layout = Layout(20, 20, background=0.1)
     layout.add_layer(layer)
     assert_rerender_matches_render(layout, f, x=14, y=14)
+
+
+# ---------------------------------------------------------------------------
+# Layer invert (holes)
+# ---------------------------------------------------------------------------
+
+def test_inverted_layer_solid_outside_features():
+    """Outside all features an inverted layer paints its gray_value."""
+    f = Pillar(x=10, y=10, diameter=4)
+    layer = Layer("l", gray_value=0.7, z_order=1, invert=True)
+    layer.add_feature(f)
+    layout = Layout(20, 20, background=0.0)
+    layout.add_layer(layer)
+    img = layout.render()
+    # Far corner: no feature → inverted layer fully covers → gray_value
+    assert img[0, 0] == pytest.approx(0.7)
+
+
+def test_inverted_layer_transparent_inside_features():
+    """Centre of a feature in an inverted layer is a hole — background shows through."""
+    f = Pillar(x=10, y=10, diameter=6)
+    layer = Layer("l", gray_value=0.7, z_order=1, invert=True)
+    layer.add_feature(f)
+    layout = Layout(20, 20, background=0.2)
+    layout.add_layer(layer)
+    img = layout.render()
+    assert img[10, 10] == pytest.approx(0.2)
+
+
+def test_inverted_layer_over_lower_layer():
+    """Hole in inverted top layer exposes the lower layer's gray value."""
+    bot = Layer("bot", gray_value=0.4, z_order=1)
+    bot.add_feature(Line(Orientation.HORIZONTAL, thickness=20, position=10))
+    top = Layer("top", gray_value=0.9, z_order=2, invert=True)
+    top.add_feature(Pillar(x=10, y=10, diameter=6))
+    layout = Layout(20, 20, background=0.0)
+    layout.add_layer(bot).add_layer(top)
+    img = layout.render()
+    # Centre pixel: hole in top → shows bot gray
+    assert img[10, 10] == pytest.approx(0.4)
+    # Away from hole: top layer solid → top gray
+    assert img[0, 0] == pytest.approx(0.9)
+
+
+def test_inverted_layer_rerender_matches_render():
+    """rerender_feature must give the same result as a fresh render for inverted layers."""
+    f = Pillar(x=10, y=10, diameter=6)
+    layer = Layer("l", gray_value=0.8, z_order=1, invert=True)
+    layer.add_feature(f)
+    layout = Layout(20, 20, background=0.1)
+    layout.add_layer(layer)
+    assert_rerender_matches_render(layout, f, x=14, y=14)
